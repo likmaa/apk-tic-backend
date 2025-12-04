@@ -1,0 +1,210 @@
+<?php
+
+namespace App\Http\Controllers\Auth;
+
+use App\Http\Controllers\Controller;
+use App\Models\User;
+use App\Services\KyaSmsService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Auth;
+use App\Support\Phone;
+use Twilio\Exceptions\RestException;
+
+class OtpController extends Controller
+{
+    protected $kyaSms;
+
+    public function __construct(KyaSmsService $kyaSms)
+    {
+        $this->kyaSms = $kyaSms;
+    }
+
+    public function requestOtp(Request $request)
+    {
+        $data = $request->validate([
+            'phone' => ['required', 'string', 'min:8', 'max:20'],
+        ]);
+
+        $phone = Phone::normalize($data['phone']); // ex: +229XXXXXXXX
+
+        try {
+            // Si l'utilisateur existe déjà et que son téléphone est déjà vérifié,
+            // on saute complètement l'étape OTP et on le connecte directement.
+            $existing = User::where('phone', $phone)->first();
+            if ($existing && $existing->phone_verified_at) {
+                $token = $existing->createToken('mobile')->plainTextToken;
+
+                return response()->json([
+                    'status' => 'already_verified',
+                    'message' => 'Numéro déjà vérifié, connexion directe.',
+                    'token' => $token,
+                    'user'  => [
+                        'id' => $existing->id,
+                        'name' => $existing->name,
+                        'email' => $existing->email,
+                        'phone' => $existing->phone,
+                        'role'  => $existing->role,
+                        'photo' => $existing->photo,
+                    ],
+                ]);
+            }
+
+            // En production, déléguer complètement l'OTP à Kya SMS
+            $providerResponse = $this->kyaSms->sendOtp($phone);
+
+            return response()->json([
+                'status' => 'otp_sent',
+                'message' => 'OTP envoyé par SMS via KYA SMS.',
+                'provider' => $providerResponse,
+                // On renvoie explicitement la clé OTP au client pour vérification ultérieure
+                'otp_key' => $providerResponse['key'] ?? null,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Erreur lors de l’envoi SMS OTP.',
+                'debug' => $e->getMessage() // retire en production
+            ], 500);
+        }
+    }
+
+
+    public function verifyOtp(Request $request)
+    {
+        $data = $request->validate([
+            'phone' => 'required|string',
+            'code'   => 'required|digits:6',
+            'otp_key' => 'required|string',
+            'role'   => 'sometimes|string|in:passenger,driver',
+        ]);
+
+        $phone = Phone::normalize($data['phone']);
+
+        // Vérifier l'OTP auprès de KYA SMS en utilisant la clé retournée par /otp/create
+        $verifyResponse = $this->kyaSms->verifyOtp($data['otp_key'], $data['code']);
+
+        // Doc KYA: { "reason": "success", "status": 200, "msg": "checked" }
+        $reason = $verifyResponse['reason'] ?? null;
+        $statusCode = $verifyResponse['status'] ?? null; // 200, 100, 101, 102, 103...
+
+        if ($reason !== 'success') {
+            // Mapper les principaux codes OTP de la doc KYA
+            $friendlyMessage = 'Vérification OTP échouée.';
+            if ($statusCode === 100) {
+                $friendlyMessage = 'Clé OTP invalide. Veuillez redemander un nouveau code.';
+            } elseif ($statusCode === 101) {
+                $friendlyMessage = 'Nombre maximum de tentatives atteint. Veuillez redemander un nouveau code.';
+            } elseif ($statusCode === 102) {
+                $friendlyMessage = 'Code OTP incorrect. Veuillez vérifier le code saisi.';
+            } elseif ($statusCode === 103) {
+                $friendlyMessage = 'Code OTP expiré. Veuillez redemander un nouveau code.';
+            }
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $friendlyMessage,
+                'provider' => $verifyResponse,
+            ], 422);
+        }
+
+        // OTP valide côté provider : on peut créer / mettre à jour l'utilisateur et le connecter
+        $user = User::where('phone', $phone)->first();
+
+        if (!$user) {
+            $user = User::create([
+                'name'     => $phone,
+                'email'    => $phone . '@example.local',
+                'password' => Hash::make(bin2hex(random_bytes(8))),
+                'phone'    => $phone,
+                'role'     => 'passenger',
+                'is_active' => true,
+                'phone_verified_at' => now(),
+            ]);
+        } else {
+            if (is_null($user->phone_verified_at)) {
+                $user->phone_verified_at = now();
+                $user->save();
+            }
+            if ($user->is_active === null) {
+                $user->is_active = true;
+                $user->save();
+            }
+        }
+
+        // Générer un token Sanctum pour la connexion mobile
+        $token = $user->createToken('mobile')->plainTextToken;
+
+        // Nettoyer l'OTP utilisé
+        cache()->forget('otp_' . $phone);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'OTP validé.',
+            'token' => $token,
+            'user'  => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'phone' => $user->phone,
+                'role'  => $user->role,
+                'photo' => $user->photo,
+            ],
+        ]);
+    }
+
+
+    public function me()
+    {
+        return response()->json(Auth::user());
+    }
+
+    public function logout(Request $request)
+    {
+        $request->user()->currentAccessToken()->delete();
+        return response()->json(['message' => 'Déconnexion réussie']);
+    }
+
+
+    public function updateProfile(Request $request)
+    {
+        /** @var \App\Models\User $user */
+        $user = $request->user();
+
+        $data = $request->validate([
+            'name'  => ['nullable', 'string', 'max:255'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:20'],
+            'photo' => ['nullable', 'string', 'max:2048'],
+        ]);
+
+        // Met à jour le nom complet si fourni
+        if (array_key_exists('name', $data) && $data['name'] !== null && $data['name'] !== '') {
+            $user->name = $data['name'];
+        }
+
+        if (array_key_exists('email', $data) && $data['email'] !== null) {
+            $user->email = $data['email'];
+        }
+
+        // Optionnel : mise à jour du téléphone brut (on ne renormalise pas ici pour éviter de casser l'auth)
+        if (array_key_exists('phone', $data) && $data['phone'] !== null && $data['phone'] !== '') {
+            $user->phone = $data['phone'];
+        }
+
+        if (array_key_exists('photo', $data) && $data['photo'] !== null && $data['photo'] !== '') {
+            $user->photo = $data['photo'];
+        }
+
+        $user->save();
+
+        return response()->json([
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'phone' => $user->phone,
+            'role'  => $user->role,
+            'photo' => $user->photo,
+        ]);
+    }
+}

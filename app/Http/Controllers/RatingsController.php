@@ -1,0 +1,79 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use App\Models\Ride;
+use App\Models\Rating;
+use App\Models\DriverReward;
+
+class RatingsController extends Controller
+{
+    public function store(Request $request)
+    {
+        $user = Auth::user();
+        $data = $request->validate([
+            'ride_id' => ['required','integer','min:1'],
+            'stars' => ['required','integer','min:1','max:5'],
+            'comment' => ['nullable','string','max:500'],
+        ]);
+
+        $ride = Ride::findOrFail($data['ride_id']);
+        if ($ride->rider_id !== ($user?->id)) {
+            return response()->json(['message' => 'Not your ride'], 403);
+        }
+        if ($ride->status !== 'completed') {
+            return response()->json(['message' => 'Ride not completed'], 422);
+        }
+        if (!$ride->driver_id) {
+            return response()->json(['message' => 'No driver assigned'], 422);
+        }
+
+        $exists = Rating::where('ride_id', $ride->id)->where('passenger_id', $user?->id)->exists();
+        if ($exists) {
+            return response()->json(['message' => 'Rating already submitted'], 409);
+        }
+
+        $reward = null;
+
+        DB::transaction(function () use ($ride, $user, $data, &$reward) {
+            Rating::create([
+                'ride_id' => $ride->id,
+                'driver_id' => $ride->driver_id,
+                'passenger_id' => $user?->id,
+                'stars' => (int) $data['stars'],
+                'comment' => $data['comment'] ?? null,
+                'created_at' => now(),
+            ]);
+
+            $totalPoints = (int) DB::table('ratings')->where('driver_id', $ride->driver_id)->sum('stars');
+            $lastThreshold = (int) DB::table('driver_rewards')->where('driver_id', $ride->driver_id)->max('points_threshold');
+
+            $currentThreshold = (int) (floor($totalPoints / 100) * 100);
+            if ($currentThreshold >= 100 && $currentThreshold > $lastThreshold) {
+                // Award for each missing 100-points step (e.g., 100, 200, ...)
+                for ($pt = $lastThreshold + 100; $pt <= $currentThreshold; $pt += 100) {
+                    DB::table('driver_rewards')->insert([
+                        'driver_id' => $ride->driver_id,
+                        'points_threshold' => $pt,
+                        'amount' => 5000,
+                        'created_at' => now(),
+                    ]);
+                }
+                $reward = [
+                    'points_threshold' => $currentThreshold,
+                    'amount' => 5000,
+                ];
+            }
+        });
+
+        return response()->json([
+            'ok' => true,
+            'driver_id' => $ride->driver_id,
+            'ride_id' => $ride->id,
+            'awarded' => $reward,
+        ], 201);
+    }
+}

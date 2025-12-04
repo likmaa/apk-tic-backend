@@ -1,0 +1,69 @@
+FROM php:8.3-fpm-alpine
+
+# Installer les dépendances système
+RUN apk add --no-cache \
+    git \
+    curl \
+    libpng-dev \
+    libzip-dev \
+    zip \
+    unzip \
+    oniguruma-dev \
+    mysql-client \
+    && docker-php-ext-install \
+    pdo_mysql \
+    mbstring \
+    exif \
+    pcntl \
+    bcmath \
+    gd \
+    zip
+
+# Installer Composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+# Installer Node.js pour les assets (si nécessaire)
+RUN apk add --no-cache nodejs npm
+
+# Créer le répertoire de travail
+WORKDIR /var/www/html
+
+# Copier les fichiers de configuration
+COPY composer.json composer.lock ./
+COPY package.json package-lock.json* ./
+
+# Installer les dépendances PHP
+RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
+
+# Installer les dépendances Node (si nécessaire)
+RUN if [ -f package.json ]; then npm ci --only=production; fi
+
+# Copier le reste du code
+COPY . .
+
+# Configurer les permissions
+RUN chown -R www-data:www-data /var/www/html \
+    && chmod -R 755 /var/www/html/storage \
+    && chmod -R 755 /var/www/html/bootstrap/cache
+
+# Créer le fichier .env si nécessaire (sera remplacé par Coolify)
+RUN if [ ! -f .env ]; then cp .env.example .env; fi
+
+# Build des assets (si nécessaire)
+RUN if [ -f package.json ]; then npm run build; fi
+
+# Optimiser Laravel
+RUN php artisan config:cache || true \
+    && php artisan route:cache || true \
+    && php artisan view:cache || true
+
+# Exposer le port
+EXPOSE 9000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+    CMD php-fpm-healthcheck || exit 1
+
+# Commande de démarrage
+CMD ["php-fpm"]
+

@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  soketi:
+    image: quay.io/soketi/soketi:1.0-16-debian
+    restart: unless-stopped
+    ports:
+      - "6001:6001"
+      - "9601:9601"
+    environment:
+      APP_ID: "${PUSHER_APP_ID:-local}"
+      APP_KEY: "${PUSHER_APP_KEY:-local-key}"
+      APP_SECRET: "${PUSHER_APP_SECRET:-local-secret}"
+      DEBUG: "1"
+      DEFAULT_APP_PORT: 6001
+      DEFAULT_APP_TRANSPORTS: "ws,wss"
+      SOKETI_DEFAULT_APP_ID: "${PUSHER_APP_ID:-local}"
+      SOKETI_DEFAULT_APP_KEY: "${PUSHER_APP_KEY:-local-key}"
+      SOKETI_DEFAULT_APP_SECRET: "${PUSHER_APP_SECRET:-local-secret}"
+      SOKETI_DEFAULT_APP_MAX_CONNECTIONS: 1000
+      SOKETI_DEBUG: "1"
+      SOKETI_METRICS_SERVER_PORT: 9601
+
