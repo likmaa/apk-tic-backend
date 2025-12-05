@@ -37,7 +37,13 @@ COPY artisan ./
 RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist --no-scripts
 
 # Installer les dépendances Node (si nécessaire)
-RUN if [ -f package.json ]; then npm ci --only=production; fi
+RUN if [ -f package.json ]; then \
+        if [ -f package-lock.json ]; then \
+            npm ci --omit=dev; \
+        else \
+            npm install --omit=dev; \
+        fi \
+    fi
 
 # Copier le reste du code
 COPY . .
