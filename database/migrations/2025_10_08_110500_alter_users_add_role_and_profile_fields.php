@@ -14,7 +14,9 @@ return new class extends Migration
                 $table->string('name')->nullable()->change();
             }
             if (Schema::hasColumn('users', 'email')) {
-                $table->string('email')->nullable()->unique()->change();
+                // Modifier la colonne email pour la rendre nullable
+                // Ne pas recréer l'index unique car il existe déjà
+                $table->string('email')->nullable()->change();
             }
             if (Schema::hasColumn('users', 'password')) {
                 $table->string('password')->nullable()->change();
