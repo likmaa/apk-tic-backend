@@ -11,6 +11,9 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Supprimer la table si elle existe déjà (cas d'une migration partielle)
+        Schema::dropIfExists('line_stops');
+        
         Schema::create('line_stops', function (Blueprint $table) {
             $table->id();
             $table->foreignId('line_id')->constrained()->cascadeOnDelete();
