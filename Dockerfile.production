@@ -36,12 +36,12 @@ COPY artisan ./
 # Installer les dépendances PHP
 RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist --no-scripts
 
-# Installer les dépendances Node (si nécessaire)
+# Installer les dépendances Node (avec dev pour le build)
 RUN if [ -f package.json ]; then \
         if [ -f package-lock.json ]; then \
-            npm ci --omit=dev; \
+            npm ci; \
         else \
-            npm install --omit=dev; \
+            npm install; \
         fi \
     fi
 
@@ -61,6 +61,9 @@ RUN if [ ! -f .env ]; then cp .env.example .env; fi
 
 # Build des assets (si nécessaire)
 RUN if [ -f package.json ]; then npm run build; fi
+
+# Supprimer node_modules après le build pour réduire la taille de l'image
+RUN if [ -f package.json ]; then rm -rf node_modules; fi
 
 # Optimiser Laravel
 RUN php artisan config:cache || true \
