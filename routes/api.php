@@ -5,6 +5,9 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\OtpController;
 use App\Http\Controllers\TripsController;
 
+// Health check endpoint (public)
+Route::get('/health', fn () => response()->json(['status' => 'ok', 'timestamp' => now()]));
+
 Route::prefix('auth')->group(function () {
     Route::post('/request-otp', [OtpController::class, 'requestOtp'])->middleware('throttle:otp');
     Route::post('/verify-otp', [OtpController::class, 'verifyOtp'])->middleware('throttle:otp');
