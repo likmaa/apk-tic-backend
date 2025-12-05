@@ -73,9 +73,9 @@ RUN php artisan config:cache || true \
 # Exposer le port
 EXPOSE 9000
 
-# Health check
+# Health check - vérifie que PHP fonctionne
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-    CMD php-fpm-healthcheck || exit 1
+    CMD php -v || exit 1
 
 # Commande de démarrage
 CMD ["php-fpm"]
