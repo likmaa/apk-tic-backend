@@ -48,6 +48,9 @@ RUN if [ -f package.json ]; then \
 # Copier le reste du code
 COPY . .
 
+# Copier la configuration PHP-FPM pour écouter sur TCP
+COPY php-fpm.conf /usr/local/etc/php-fpm.d/www.conf
+
 # Exécuter les scripts Composer maintenant que tous les fichiers sont copiés
 RUN php artisan package:discover --ansi || true
 
