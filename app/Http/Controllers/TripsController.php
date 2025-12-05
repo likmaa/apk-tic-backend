@@ -879,6 +879,18 @@ class TripsController extends Controller
         $earthRadiusKm = 6371.0;
         $searchRadiusKm = 10.0;
 
+        // SQLite ne supporte pas HAVING avec des alias non-agrégés
+        // On utilise une sous-requête pour filtrer par distance
+        $distanceFormula = "(
+            {$earthRadiusKm} * 2 * ASIN(
+                SQRT(
+                    POWER(SIN(RADIANS({$pickupLat} - users.last_lat) / 2), 2) +
+                    COS(RADIANS({$pickupLat})) * COS(RADIANS(users.last_lat)) *
+                    POWER(SIN(RADIANS({$pickupLng} - users.last_lng) / 2), 2)
+                )
+            )
+        )";
+
         $query = User::query()
             ->where('role', 'driver')
             ->where('is_active', true)
@@ -887,26 +899,10 @@ class TripsController extends Controller
             ->where('driver_profiles.status', 'approved')
             ->whereNotNull('users.last_lat')
             ->whereNotNull('users.last_lng')
+            ->whereRaw("{$distanceFormula} <= ?", [$searchRadiusKm])
             ->select('users.*')
-            ->selectRaw(
-                '(
-                    ? * 2 * ASIN(
-                        SQRT(
-                            POWER(SIN(RADIANS(? - users.last_lat) / 2), 2) +
-                            COS(RADIANS(?)) * COS(RADIANS(users.last_lat)) *
-                            POWER(SIN(RADIANS(? - users.last_lng) / 2), 2)
-                        )
-                    )
-                ) as distance_km',
-                [
-                    $earthRadiusKm,
-                    $pickupLat,
-                    $pickupLat,
-                    $pickupLng,
-                ]
-            )
-            ->having('distance_km', '<=', $searchRadiusKm)
-            ->orderBy('distance_km')
+            ->selectRaw("{$distanceFormula} as distance_km")
+            ->orderByRaw("{$distanceFormula} ASC")
             ->orderByDesc('users.last_location_at')
             ->orderBy('users.id');
 
