@@ -28,18 +28,22 @@ RUN apk add --no-cache nodejs npm
 # Créer le répertoire de travail
 WORKDIR /var/www/html
 
-# Copier les fichiers de configuration
+# Copier les fichiers de configuration et artisan (nécessaire pour les scripts Composer)
 COPY composer.json composer.lock ./
 COPY package.json package-lock.json* ./
+COPY artisan ./
 
 # Installer les dépendances PHP
-RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
+RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist --no-scripts
 
 # Installer les dépendances Node (si nécessaire)
 RUN if [ -f package.json ]; then npm ci --only=production; fi
 
 # Copier le reste du code
 COPY . .
+
+# Exécuter les scripts Composer maintenant que tous les fichiers sont copiés
+RUN php artisan package:discover --ansi || true
 
 # Configurer les permissions
 RUN chown -R www-data:www-data /var/www/html \
