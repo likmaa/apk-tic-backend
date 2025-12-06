@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\Ride;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class UsersController extends Controller
 {
@@ -53,7 +55,37 @@ class UsersController extends Controller
     public function destroy(int $id)
     {
         $u = User::findOrFail($id);
-        $u->delete();
+        
+        // Supprimer les rides associés (en tant que rider ou driver) avant de supprimer l'utilisateur
+        DB::transaction(function () use ($u) {
+            // Récupérer les IDs des rides à supprimer
+            $rideIds = Ride::where('rider_id', $u->id)
+                ->orWhere('driver_id', $u->id)
+                ->pluck('id');
+            
+            // Supprimer les ratings associés aux rides (ratings n'a pas de FK mais on nettoie pour la cohérence)
+            if ($rideIds->isNotEmpty()) {
+                DB::table('ratings')->whereIn('ride_id', $rideIds)->delete();
+            }
+            
+            // Supprimer les rides où l'utilisateur est le passager (rider)
+            Ride::where('rider_id', $u->id)->delete();
+            
+            // Supprimer les rides où l'utilisateur est le chauffeur (driver)
+            Ride::where('driver_id', $u->id)->delete();
+            
+            // Supprimer les ratings où l'utilisateur est le driver ou le passenger
+            DB::table('ratings')->where('driver_id', $u->id)->orWhere('passenger_id', $u->id)->delete();
+            
+            // Supprimer les driver_rewards associés
+            DB::table('driver_rewards')->where('driver_id', $u->id)->delete();
+            
+            // Maintenant on peut supprimer l'utilisateur
+            // Les autres tables (driver_profiles, wallets, payments, addresses) ont onDelete('cascade')
+            // donc elles seront supprimées automatiquement
+            $u->delete();
+        });
+        
         return response()->json(['ok' => true]);
     }
 }
