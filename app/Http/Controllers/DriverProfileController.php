@@ -108,16 +108,35 @@ class DriverProfileController extends Controller
     {
         $user = $request->user();
 
-        DB::table('driver_profiles')
-            ->where('user_id', $user->id)
-            ->update([
+        // Vérifier si le profil existe, sinon le créer
+        $profile = DB::table('driver_profiles')->where('user_id', $user->id)->first();
+        
+        if (!$profile) {
+            // Créer le profil driver avec status='pending' si il n'existe pas
+            DB::table('driver_profiles')->insert([
+                'user_id' => $user->id,
+                'status' => 'pending',
                 'contract_accepted_at' => now(),
+                'created_at' => now(),
                 'updated_at' => now(),
             ]);
+        } else {
+            // Mettre à jour le contrat accepté
+            DB::table('driver_profiles')
+                ->where('user_id', $user->id)
+                ->update([
+                    'contract_accepted_at' => now(),
+                    'updated_at' => now(),
+                ]);
+        }
+
+        // Récupérer le profil mis à jour pour retourner contract_accepted_at
+        $profile = DB::table('driver_profiles')->where('user_id', $user->id)->first();
 
         return response()->json([
             'ok' => true,
             'user_id' => $user->id,
+            'contract_accepted_at' => $profile->contract_accepted_at ?? now()->toIso8601String(),
         ]);
     }
 }

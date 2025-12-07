@@ -97,11 +97,12 @@ Route::prefix('admin')->group(function () {
 Route::middleware(['auth:sanctum'])->prefix('driver')->group(function () {
     Route::get('/profile', [DriverProfileController::class, 'show']);
     Route::post('/profile', [DriverProfileController::class, 'store']);
+    // Accepter le contrat : accessible même si le statut est 'pending'
+    Route::post('/contract/accept', [DriverProfileController::class, 'acceptContract']);
 });
 
 Route::middleware(['auth:sanctum', 'role:driver', 'driver.approved'])->prefix('driver')->group(function () {
     Route::get('/ping', fn () => response()->json(['ok' => true, 'area' => 'driver']));
-    Route::post('/contract/accept', [DriverProfileController::class, 'acceptContract']);
     Route::post('/status', [TripsController::class, 'updateDriverStatus']);
     Route::post('/location', [TripsController::class, 'updateDriverLocation']);
     Route::get('/rides', [TripsController::class, 'driverRides']);
