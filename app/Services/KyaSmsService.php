@@ -52,17 +52,20 @@ class KyaSmsService
         return $response->json();
     }
 
-    public function sendOtp(string $phone): array
+    public function sendOtp(string $phone, bool $forceNew = false): array
     {
         if ($this->apiKey === '') {
             throw new \RuntimeException('KYASMS_API_KEY manquant.');
         }
 
-        // Si une clé OTP existe déjà pour ce numéro, on ne régénère pas :
+        // Si une clé OTP existe déjà pour ce numéro et qu'on ne force pas :
         // on renvoie une réponse indiquant qu'un code est déjà en cours,
         // afin que le client passe directement à la vérification.
-        $existingKey = cache()->get('kya_otp_key_' . $phone);
-        if ($existingKey) {
+        // Si $forceNew est true, on supprime l'ancien cache et on envoie un nouveau code.
+        $cacheKey = 'kya_otp_key_' . $phone;
+        $existingKey = cache()->get($cacheKey);
+        
+        if ($existingKey && !$forceNew) {
             Log::info('KYA SMS OTP already exists for phone, skipping create', [
                 'phone' => $phone,
                 'key'   => $existingKey,
@@ -72,6 +75,15 @@ class KyaSmsService
                 'reason' => 'already_exists',
                 'key'    => $existingKey,
             ];
+        }
+        
+        // Si on force un nouveau code, supprimer l'ancien cache
+        if ($forceNew && $existingKey) {
+            Log::info('KYA SMS OTP force new code, clearing old cache', [
+                'phone' => $phone,
+                'old_key' => $existingKey,
+            ]);
+            cache()->forget($cacheKey);
         }
 
         // Payload conforme à la doc KYA OTP: /otp/create
@@ -106,7 +118,8 @@ class KyaSmsService
         }
 
         // On stocke la key associée au numéro pour la vérification ultérieure
-        cache()->put('kya_otp_key_' . $phone, $data['key'], now()->addMinutes(10));
+        // Expiration après 10 minutes (temps de validité du code OTP)
+        cache()->put($cacheKey, $data['key'], now()->addMinutes(10));
 
         return $data;
     }

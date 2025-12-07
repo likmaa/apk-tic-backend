@@ -8,6 +8,7 @@ use App\Services\KyaSmsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use App\Support\Phone;
 use Twilio\Exceptions\RestException;
 
@@ -24,34 +25,19 @@ class OtpController extends Controller
     {
         $data = $request->validate([
             'phone' => ['required', 'string', 'min:8', 'max:20'],
+            'force_new' => ['sometimes', 'boolean'], // Option pour forcer l'envoi d'un nouveau code
         ]);
 
         $phone = Phone::normalize($data['phone']); // ex: +229XXXXXXXX
+        $forceNew = $data['force_new'] ?? false;
 
         try {
-            // Si l'utilisateur existe déjà et que son téléphone est déjà vérifié,
-            // on saute complètement l'étape OTP et on le connecte directement.
-            $existing = User::where('phone', $phone)->first();
-            if ($existing && $existing->phone_verified_at) {
-                $token = $existing->createToken('mobile')->plainTextToken;
-
-                return response()->json([
-                    'status' => 'already_verified',
-                    'message' => 'Numéro déjà vérifié, connexion directe.',
-                    'token' => $token,
-                    'user'  => [
-                        'id' => $existing->id,
-                        'name' => $existing->name,
-                        'email' => $existing->email,
-                        'phone' => $existing->phone,
-                        'role'  => $existing->role,
-                        'photo' => $existing->photo,
-                    ],
-                ]);
-            }
+            // Pour l'application driver, on force TOUJOURS l'envoi d'OTP
+            // même si le numéro est déjà vérifié, pour garantir le flux OTP complet
+            // On ne saute jamais l'OTP pour l'app driver
 
             // En production, déléguer complètement l'OTP à Kya SMS
-            $providerResponse = $this->kyaSms->sendOtp($phone);
+            $providerResponse = $this->kyaSms->sendOtp($phone, $forceNew);
 
             return response()->json([
                 'status' => 'otp_sent',
@@ -110,14 +96,16 @@ class OtpController extends Controller
 
         // OTP valide côté provider : on peut créer / mettre à jour l'utilisateur et le connecter
         $user = User::where('phone', $phone)->first();
+        $isNewUser = false;
 
         if (!$user) {
+            $isNewUser = true;
             $user = User::create([
                 'name'     => $phone,
                 'email'    => $phone . '@example.local',
                 'password' => Hash::make(bin2hex(random_bytes(8))),
                 'phone'    => $phone,
-                'role'     => 'passenger',
+                'role'     => 'passenger', // Par défaut, on crée en passenger
                 'is_active' => true,
                 'phone_verified_at' => now(),
             ]);
@@ -132,11 +120,33 @@ class OtpController extends Controller
             }
         }
 
+        // Si role='driver' est demandé, créer un profil driver avec status='pending'
+        if (isset($data['role']) && $data['role'] === 'driver') {
+            $profileExists = DB::table('driver_profiles')->where('user_id', $user->id)->exists();
+            
+            if (!$profileExists) {
+                // Créer un profil driver avec status='pending'
+                DB::table('driver_profiles')->insert([
+                    'user_id' => $user->id,
+                    'status' => 'pending',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                
+                // Log pour debug (à retirer en production)
+                \Log::info('Driver profile created', [
+                    'user_id' => $user->id,
+                    'phone' => $phone,
+                    'status' => 'pending'
+                ]);
+            }
+        }
+
         // Générer un token Sanctum pour la connexion mobile
         $token = $user->createToken('mobile')->plainTextToken;
 
-        // Nettoyer l'OTP utilisé
-        cache()->forget('otp_' . $phone);
+        // Nettoyer l'OTP utilisé (utiliser la bonne clé de cache)
+        cache()->forget('kya_otp_key_' . $phone);
 
         return response()->json([
             'status' => 'success',
