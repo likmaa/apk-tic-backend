@@ -13,12 +13,18 @@ class KyaSmsService
 
     public function __construct()
     {
-        // TODO: remettre la clé et le sender en lecture depuis l'env une fois les tests terminés.
-        $this->apiKey = 'kyasms661efc85b7b3c8f0d90cd7f21097e731e05b029cedcf265319b853dd67';
-        // Serveur principal
-        $this->baseUrl =  'https://route.kyasms.com/api/v3';
-        // Sender ID utilisé pour KYA SMS (hardcodé pour debug)
-        $this->from = 'TICMITON';;
+        // Utiliser les variables d'environnement si disponibles, sinon les valeurs par défaut
+        $this->apiKey = env('KYASMS_API_KEY', 'kyasms661efc85b7b3c8f0d90cd7f21097e731e05b029cedcf265319b853dd67');
+        $this->baseUrl = env('KYASMS_BASE_URL', 'https://route.kyasms.com/api/v3');
+        $this->from = env('KYASMS_FROM', 'TICMITON');
+        
+        // Log de la configuration (sans exposer la clé complète)
+        Log::info('KYA SMS Service initialized', [
+            'base_url' => $this->baseUrl,
+            'from' => $this->from,
+            'api_key_length' => strlen($this->apiKey),
+            'api_key_prefix' => substr($this->apiKey, 0, 10) . '...',
+        ]);
     }
 
     public function sendSmsMessage(string $to, string $message): array
@@ -94,20 +100,37 @@ class KyaSmsService
         ];
 
         Log::info('KYA SMS OTP send payload', $payload);
-
-        $response = Http::withHeaders([
-            'APIKEY' => $this->apiKey,
-            'Content-Type' => 'application/json',
-        ])->post($this->baseUrl . '/otp/create', $payload);
-
-        Log::info('KYA SMS OTP send response', [
-            'status' => $response->status(),
-            'body'   => $response->body(),
+        Log::info('KYA SMS OTP request details', [
+            'url' => $this->baseUrl . '/otp/create',
+            'api_key_length' => strlen($this->apiKey),
         ]);
 
-        if (!$response->ok()) {
-            $body = $response->body();
-            throw new \RuntimeException('KYA SMS OTP send failed with status ' . $response->status() . ' body: ' . $body);
+        try {
+            $response = Http::timeout(30)->withHeaders([
+                'APIKEY' => $this->apiKey,
+                'Content-Type' => 'application/json',
+            ])->post($this->baseUrl . '/otp/create', $payload);
+
+            Log::info('KYA SMS OTP send response', [
+                'status' => $response->status(),
+                'body'   => $response->body(),
+                'headers' => $response->headers(),
+            ]);
+
+            if (!$response->ok()) {
+                $body = $response->body();
+                $errorMsg = 'KYA SMS OTP send failed with status ' . $response->status() . ' body: ' . $body;
+                Log::error($errorMsg);
+                throw new \RuntimeException($errorMsg);
+            }
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            $errorMsg = 'KYA SMS OTP connection failed: ' . $e->getMessage();
+            Log::error($errorMsg);
+            throw new \RuntimeException($errorMsg);
+        } catch (\Exception $e) {
+            $errorMsg = 'KYA SMS OTP error: ' . $e->getMessage();
+            Log::error($errorMsg);
+            throw new \RuntimeException($errorMsg);
         }
 
         $data = $response->json();
