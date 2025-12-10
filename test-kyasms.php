@@ -92,3 +92,4 @@ if ($httpCode === 200 && isset($data['key'])) {
         echo "Erreur: " . $data['error'] . "\n";
     }
 }
+

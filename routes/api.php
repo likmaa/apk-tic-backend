@@ -81,7 +81,8 @@ Route::prefix('admin')->group(function () {
         Route::post('/users/{id}/wallet/reset', [\App\Http\Controllers\WalletController::class, 'adminReset']);
 
         // Notifications
-        Route::post('/notifications/broadcast', [NotificationsController::class, 'broadcast']);
+        Route::post('/notifications/send', [\App\Http\Controllers\Api\Admin\NotificationController::class, 'store']);
+        Route::get('/notifications/history', [\App\Http\Controllers\Api\Admin\NotificationController::class, 'index']);
 
         // Moderation (accounts, reports)
         Route::get('/moderation/queue', [ModerationController::class, 'queue']);
@@ -91,6 +92,10 @@ Route::prefix('admin')->group(function () {
         Route::get('/stats/drivers/daily/global', [StatsController::class, 'driversDailyGlobal']);
         Route::get('/stats/drivers/daily/top', [StatsController::class, 'topDriversDaily']);
         Route::get('/stats/overview', [StatsController::class, 'overview']);
+
+        // Settings
+        Route::get('/settings', [\App\Http\Controllers\Admin\SettingsController::class, 'index']);
+        Route::post('/settings', [\App\Http\Controllers\Admin\SettingsController::class, 'update']);
     });
 });
 
@@ -99,11 +104,14 @@ Route::middleware(['auth:sanctum'])->prefix('driver')->group(function () {
     Route::post('/profile', [DriverProfileController::class, 'store']);
     // Accepter le contrat : accessible même si le statut est 'pending'
     Route::post('/contract/accept', [DriverProfileController::class, 'acceptContract']);
+    Route::get('/daily-tip', [\App\Http\Controllers\SettingController::class, 'getDailyTip']);
+    Route::get('/notifications', [\App\Http\Controllers\Api\Driver\NotificationController::class, 'index']);
+    // Status endpoint should be available to all authenticated drivers, not just approved ones
+    Route::post('/status', [TripsController::class, 'updateDriverStatus']);
 });
 
 Route::middleware(['auth:sanctum', 'role:driver', 'driver.approved'])->prefix('driver')->group(function () {
     Route::get('/ping', fn () => response()->json(['ok' => true, 'area' => 'driver']));
-    Route::post('/status', [TripsController::class, 'updateDriverStatus']);
     Route::post('/location', [TripsController::class, 'updateDriverLocation']);
     Route::get('/rides', [TripsController::class, 'driverRides']);
     Route::get('/rides/{id}', [TripsController::class, 'driverRideShow']);
