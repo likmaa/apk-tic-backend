@@ -108,6 +108,8 @@ Route::middleware(['auth:sanctum'])->prefix('driver')->group(function () {
     Route::get('/notifications', [\App\Http\Controllers\Api\Driver\NotificationController::class, 'index']);
     // Status endpoint should be available to all authenticated drivers, not just approved ones
     Route::post('/status', [TripsController::class, 'updateDriverStatus']);
+    // Vehicle update endpoint
+    Route::post('/update-vehicle', [TripsController::class, 'updateVehicle']);
 });
 
 Route::middleware(['auth:sanctum', 'role:driver', 'driver.approved'])->prefix('driver')->group(function () {

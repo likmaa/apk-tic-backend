@@ -945,4 +945,53 @@ class TripsController extends Controller
             'photo' => $user->photo,
         ];
     }
+
+    /**
+     * Update driver's vehicle information
+     */
+    public function updateVehicle(Request $request)
+    {
+        /** @var User|null $driver */
+        $driver = Auth::user();
+        if (!$driver || !$driver->isDriver()) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $data = $request->validate([
+            'vehicle_make' => ['required', 'string', 'max:100'],
+            'vehicle_model' => ['required', 'string', 'max:100'],
+            'vehicle_year' => ['nullable', 'string', 'max:4'],
+            'vehicle_color' => ['nullable', 'string', 'max:50'],
+            'license_plate' => ['required', 'string', 'max:20'],
+            'vehicle_type' => ['nullable', 'string', 'in:sedan,suv,van,compact'],
+        ]);
+
+        // Get or create driver profile
+        $profile = $driver->driverProfile;
+        if (!$profile) {
+            return response()->json(['message' => 'Driver profile not found'], 404);
+        }
+
+        // Update vehicle information
+        $profile->vehicle_make = $data['vehicle_make'];
+        $profile->vehicle_model = $data['vehicle_model'];
+        $profile->vehicle_year = $data['vehicle_year'] ?? null;
+        $profile->vehicle_color = $data['vehicle_color'] ?? null;
+        $profile->license_plate = $data['license_plate'];
+        $profile->vehicle_type = $data['vehicle_type'] ?? 'sedan';
+        $profile->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Vehicle information updated successfully',
+            'vehicle' => [
+                'make' => $profile->vehicle_make,
+                'model' => $profile->vehicle_model,
+                'year' => $profile->vehicle_year,
+                'color' => $profile->vehicle_color,
+                'license_plate' => $profile->license_plate,
+                'type' => $profile->vehicle_type,
+            ],
+        ]);
+    }
 }
