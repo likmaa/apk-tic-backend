@@ -15,8 +15,8 @@ class AdminAndDeveloperSeeder extends Seeder
             ['phone' => '+10000000001'],
             [
                 'name' => 'Admin User',
-                'email' => 'admin@example.local',
-                'password' => Hash::make('admin-password'),
+                'email' => 'admin@ticmiton.com',
+                'password' => Hash::make('4vVgAnbSH4EJ@T_'),
                 'role' => 'admin',
                 'is_active' => true,
                 'phone_verified_at' => now(),
@@ -28,8 +28,8 @@ class AdminAndDeveloperSeeder extends Seeder
             ['phone' => '+10000000002'],
             [
                 'name' => 'Developer User',
-                'email' => 'developer@example.local',
-                'password' => Hash::make('developer-password'),
+                'email' => 'dev@ticmiton.com',
+                'password' => Hash::make('M@likGlo@2026'),
                 'role' => 'developer',
                 'is_active' => true,
                 'phone_verified_at' => now(),

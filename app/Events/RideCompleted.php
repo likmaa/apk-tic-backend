@@ -8,7 +8,7 @@ use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Queue\SerializesModels;
 
-class RideAccepted implements ShouldBroadcastNow
+class RideCompleted implements ShouldBroadcastNow
 {
     use InteractsWithSockets;
     use SerializesModels;
@@ -21,28 +21,22 @@ class RideAccepted implements ShouldBroadcastNow
     {
         return [
             new PrivateChannel('rider.'.$this->ride->rider_id),
+            new PrivateChannel('ride.'.$this->ride->id),
         ];
     }
 
     public function broadcastAs(): string
     {
-        return 'ride.accepted';
+        return 'ride.completed';
     }
 
     public function broadcastWith(): array
     {
-        $driver = $this->ride->driver;
-
         return [
             'rideId' => $this->ride->id,
-            'driver' => $driver ? [
-                'id' => $driver->id,
-                'name' => $driver->name,
-                'phone' => $driver->phone,
-                'vehicle_number' => $driver->vehicle_number,
-                'photo' => $driver->photo,
-            ] : null,
+            'status' => $this->ride->status,
+            'fare_amount' => $this->ride->fare_amount,
+            'distance_m' => $this->ride->distance_m,
         ];
     }
 }
-

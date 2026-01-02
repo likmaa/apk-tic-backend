@@ -97,6 +97,7 @@ class OtpController extends Controller
         // OTP valide côté provider : on peut créer / mettre à jour l'utilisateur et le connecter
         $user = User::where('phone', $phone)->first();
         $isNewUser = false;
+        $requestedRole = $data['role'] ?? 'passenger';
 
         if (!$user) {
             $isNewUser = true;
@@ -105,11 +106,20 @@ class OtpController extends Controller
                 'email'    => $phone . '@example.local',
                 'password' => Hash::make(bin2hex(random_bytes(8))),
                 'phone'    => $phone,
-                'role'     => 'passenger', // Par défaut, on crée en passenger
+                'role'     => $requestedRole,
                 'is_active' => true,
                 'phone_verified_at' => now(),
             ]);
         } else {
+            // Identité Unique : on ne peut pas utiliser le même numéro pour deux rôles différents
+            if ($user->role !== $requestedRole) {
+                $roleLabel = $user->role === 'driver' ? 'chauffeur' : 'passager';
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Ce numéro est déjà enregistré en tant que {$roleLabel}. Vous ne pouvez pas l'utiliser pour un autre rôle.",
+                ], 422);
+            }
+
             if (is_null($user->phone_verified_at)) {
                 $user->phone_verified_at = now();
                 $user->save();
@@ -121,7 +131,7 @@ class OtpController extends Controller
         }
 
         // Si role='driver' est demandé, créer un profil driver avec status='pending'
-        if (isset($data['role']) && $data['role'] === 'driver') {
+        if ($requestedRole === 'driver') {
             $profileExists = DB::table('driver_profiles')->where('user_id', $user->id)->exists();
             
             if (!$profileExists) {
@@ -132,15 +142,11 @@ class OtpController extends Controller
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
-                
-                // Log pour debug (à retirer en production)
-                \Log::info('Driver profile created', [
-                    'user_id' => $user->id,
-                    'phone' => $phone,
-                    'status' => 'pending'
-                ]);
             }
         }
+
+        // Session unique : déconnexion automatique des anciens appareils
+        $user->tokens()->delete();
 
         // Générer un token Sanctum pour la connexion mobile
         $token = $user->createToken('mobile')->plainTextToken;

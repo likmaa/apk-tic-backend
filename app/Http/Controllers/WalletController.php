@@ -54,10 +54,11 @@ class WalletController extends Controller
 
             // Mapping simple pour l’app mobile
             $label = match ($row->source) {
-                'ride_payment' => 'Paiement course',
-                'topup_cash'   => 'Rechargement (espèces)',
-                'topup_qr'     => 'Rechargement (QR)',
-                default        => ucfirst(str_replace('_', ' ', (string) $row->source)),
+                'ride_payment'  => 'Paiement course',
+                'ride_earnings' => 'Gain course',
+                'topup_cash'    => 'Rechargement (espèces)',
+                'topup_qr'      => 'Rechargement (QR)',
+                default         => ucfirst(str_replace('_', ' ', (string) $row->source)),
             };
 
             return [

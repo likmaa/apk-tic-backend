@@ -12,6 +12,9 @@ use App\Events\RideAccepted;
 use App\Events\RideRequested;
 use App\Events\RideDeclined;
 use App\Events\RideCancelled;
+use App\Events\RideStarted;
+use App\Events\RideCompleted;
+
 use App\Models\PricingSetting;
 
 use App\Models\Ride;
@@ -247,7 +250,8 @@ class TripsController extends Controller
 
         // Si on a des coordonnées pickup, on tente une assignation immédiate comme pour create()
         if ($ride->pickup_lat !== null && $ride->pickup_lng !== null) {
-            $this->offerRideToNextDriver($ride);
+            // True Broadcast: on laisse offered_driver_id à null pour que tous les chauffeurs éligibles voient la course
+            broadcast(new RideRequested($ride));
         }
 
         return response()->json([
@@ -300,7 +304,7 @@ class TripsController extends Controller
             'dropoff_address' => $dropoffLabel,
             'declined_driver_ids' => [],
         ]);
-        $this->offerRideToNextDriver($ride);
+        // True Broadcast: on laisse offered_driver_id à null pour que tous les chauffeurs éligibles voient la course
         broadcast(new RideRequested($ride));
 
         return response()->json([
@@ -324,9 +328,12 @@ class TripsController extends Controller
         if ($ride->status !== 'requested') {
             return response()->json(['message' => 'Ride not available'], 422);
         }
-        // Si une offre a déjà été faite à un autre chauffeur, empêcher l'acceptation
-        if ($ride->offered_driver_id && $ride->offered_driver_id !== ($driver?->id)) {
-            return response()->json(['message' => 'Ride offered to another driver'], 422);
+        // Dans le mode broadcast, on autorise n'importe quel chauffeur à accepter 
+        // une course au statut 'requested'.
+        if ($ride->offered_driver_id && $ride->offered_driver_id !== $driver->id) {
+            // Optionnel : On peut quand même garder une priorité au chauffeur ciblé
+            // ou permettre à n'importe qui d'accepter si c'est un broadcast.
+            // Pour l'instant, on assouplit pour permettre la compétition.
         }
         // Compatibilité : si driver_id est déjà fixé à un autre chauffeur, refuser
         if ($ride->driver_id && $ride->driver_id !== ($driver?->id)) {
@@ -395,6 +402,9 @@ class TripsController extends Controller
         $ride->status = 'ongoing';
         $ride->started_at = now();
         $ride->save();
+        
+        broadcast(new RideStarted($ride));
+        
         return response()->json(['ok' => true, 'ride_id' => $ride->id, 'status' => $ride->status]);
     }
 
@@ -406,15 +416,56 @@ class TripsController extends Controller
         if ($ride->driver_id !== ($driver?->id) || $ride->status !== 'ongoing') {
             return response()->json(['message' => 'Invalid state'], 422);
         }
-        $fare = (int) $ride->fare_amount;
-        $commission = (int) round($fare * 0.2);
-        $earn = $fare - $commission;
-        $ride->commission_amount = $commission;
-        $ride->driver_earnings_amount = $earn;
-        $ride->status = 'completed';
-        $ride->completed_at = now();
-        $ride->save();
-        return response()->json(['ok' => true, 'ride_id' => $ride->id, 'status' => $ride->status]);
+
+        return DB::transaction(function () use ($ride, $driver) {
+            $fare = (int) $ride->fare_amount;
+            $commission = (int) round($fare * 0.85); // Platform gets 85%
+            $earn = $fare - $commission; // Driver gets 15% (or $fare * 0.15)
+
+            $ride->commission_amount = $commission;
+            $ride->driver_earnings_amount = $earn;
+            $ride->status = 'completed';
+            $ride->completed_at = now();
+            $ride->save();
+
+            // Créditer le portefeuille du chauffeur
+            $walletController = new WalletController();
+            $wallet = DB::table('wallets')->where('user_id', $driver->id)->first();
+            
+            if (!$wallet) {
+                DB::table('wallets')->insert([
+                    'user_id' => $driver->id,
+                    'balance' => 0,
+                    'currency' => $ride->currency ?? 'XOF',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                $wallet = DB::table('wallets')->where('user_id', $driver->id)->first();
+            }
+
+            $before = (int) $wallet->balance;
+            $after = $before + $earn;
+
+            DB::table('wallet_transactions')->insert([
+                'wallet_id' => $wallet->id,
+                'type' => 'credit',
+                'source' => 'ride_earnings',
+                'amount' => $earn,
+                'balance_before' => $before,
+                'balance_after' => $after,
+                'meta' => json_encode(['ride_id' => $ride->id]),
+                'created_at' => now(),
+            ]);
+
+            DB::table('wallets')->where('id', $wallet->id)->update([
+                'balance' => $after,
+                'updated_at' => now(),
+            ]);
+
+            broadcast(new RideCompleted($ride));
+
+            return response()->json(['ok' => true, 'ride_id' => $ride->id, 'status' => $ride->status, 'earned' => $earn]);
+        });
     }
 
     public function cancelByDriver(Request $request, int $id)
@@ -699,11 +750,41 @@ class TripsController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        // Nouveau système : Diffusion au lieu de ciblage individuel
+        // On cherche une course 'requested' dans un rayon de 10km du chauffeur
+        $lat = $driver->last_lat;
+        $lng = $driver->last_lng;
+        
+        if ($lat === null || $lng === null) {
+            return response()->json(null, 204);
+        }
+
+        $earthRadiusKm = 6371.0;
+        $searchRadiusKm = (float) config('app.search_radius_km', 10.0);
+        
+        $distanceFormula = "(
+            {$earthRadiusKm} * 2 * ASIN(
+                SQRT(
+                    POWER(SIN(RADIANS({$lat} - rides.pickup_lat) / 2), 2) +
+                    COS(RADIANS({$lat})) * COS(RADIANS(rides.pickup_lat)) *
+                    POWER(SIN(RADIANS({$lng} - rides.pickup_lng) / 2), 2)
+                )
+            )
+        )";
+
         $ride = Ride::query()
-            ->where('offered_driver_id', $driver->id)
             ->where('status', 'requested')
-            ->orderByDesc('id')
-            ->first();
+            ->whereNotNull('pickup_lat')
+            ->whereNotNull('pickup_lng')
+            ->whereRaw("{$distanceFormula} <= ?", [$searchRadiusKm]);
+
+        // Exclure les courses déjà déclinées par ce chauffeur
+        $ride->where(function($q) use ($driver) {
+            $q->whereNull('declined_driver_ids')
+              ->orWhereRaw("NOT JSON_CONTAINS(declined_driver_ids, CAST(? AS JSON))", [json_encode($driver->id)]);
+        });
+
+        $ride = $ride->orderByDesc('id')->first();
 
         if (!$ride) {
             return response()->json(null, 204);
@@ -796,7 +877,7 @@ class TripsController extends Controller
 
         $driver = User::find($ride->driver_id);
         if (!$driver) {
-            return response()->json(['message' => 'Driver not found'], 404);
+            return response()->json(['message' => 'Chauffeur non trouvé'], 404);
         }
 
         return response()->json([
@@ -850,8 +931,9 @@ class TripsController extends Controller
         $excludeIds = $this->buildDriverExcludeList($ride, $extraExclude);
         $candidate = $this->findDriverCandidate($ride->pickup_lat, $ride->pickup_lng, $excludeIds);
 
+        // Suppression du fallback global : seuls les chauffeurs dans les 10km sont éligibles.
         if (!$candidate) {
-            $candidate = $this->findDriverFallback($excludeIds);
+            return null;
         }
 
         $ride->offered_driver_id = $candidate?->id;
@@ -877,10 +959,9 @@ class TripsController extends Controller
     protected function findDriverCandidate(float $pickupLat, float $pickupLng, array $excludeIds = []): ?User
     {
         $earthRadiusKm = 6371.0;
-        $searchRadiusKm = 10.0;
+        $searchRadiusKm = (float) config('app.search_radius_km', 10.0);
 
-        // SQLite ne supporte pas HAVING avec des alias non-agrégés
-        // On utilise une sous-requête pour filtrer par distance
+        // Calcul de la distance à l'aide de la formule Haversine
         $distanceFormula = "(
             {$earthRadiusKm} * 2 * ASIN(
                 SQRT(
@@ -969,7 +1050,7 @@ class TripsController extends Controller
         // Get or create driver profile
         $profile = $driver->driverProfile;
         if (!$profile) {
-            return response()->json(['message' => 'Driver profile not found'], 404);
+            return response()->json(['message' => 'Profil chauffeur non trouvé'], 404);
         }
 
         // Update vehicle information
@@ -983,7 +1064,7 @@ class TripsController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Vehicle information updated successfully',
+            'message' => 'Informations du véhicule mises à jour avec succès',
             'vehicle' => [
                 'make' => $profile->vehicle_make,
                 'model' => $profile->vehicle_model,

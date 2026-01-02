@@ -7,6 +7,8 @@ use App\Models\User;
 use App\Models\Ride;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
 
 class UsersController extends Controller
 {
@@ -87,5 +89,40 @@ class UsersController extends Controller
         });
         
         return response()->json(['ok' => true]);
+    }
+
+    public function store(Request $request)
+    {
+        // 1. Security Check: Only Developer can create users here
+        $currentUser = $request->user();
+        if (!$currentUser || $currentUser->role !== 'developer') {
+            return response()->json(['message' => 'Unauthorized action.'], 403);
+        }
+
+        // 2. Validation
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'unique:users,email'],
+            // Phone is optional or required depending on logic, let's say unique if present
+            'phone' => ['required', 'string', 'max:50', 'unique:users,phone'],
+            'password' => ['required', 'string', 'min:8'],
+            // Role restriction: developer can create admins, drivers, passengers. 
+            // Creating another developer might be restricted or allowed. Let's allow strictly 'admin' for now as per request
+            // but the UI allows picking role.
+            'role' => ['required', 'in:admin,driver,passenger'], 
+        ]);
+
+        // 3. Creation
+        $user = User::create([
+            'name' => $data['name'],
+            'email' => $data['email'],
+            'phone' => $data['phone'],
+            'password' => Hash::make($data['password']),
+            'role' => $data['role'],
+            'is_active' => true,
+            'phone_verified_at' => now(), // Auto-verify admins created by super-admin
+        ]);
+
+        return response()->json($user, 201);
     }
 }

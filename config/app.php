@@ -123,5 +123,7 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    'search_radius_km' => env('SEARCH_RADIUS_KM', 10),
+
 ];
 

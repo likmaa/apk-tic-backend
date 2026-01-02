@@ -15,14 +15,14 @@ class VoiceController extends Controller
 
         $file = $request->file('audio');
         if (!$file || !$file->isValid()) {
-            return response()->json(['error' => 'Invalid audio file'], 422);
+            return response()->json(['error' => 'Fichier audio invalide'], 422);
         }
 
         $apiKey = env('GEMINI_API_KEY');
         if (!$apiKey) {
             return response()->json([
                 'text' => 'centre commercial eros, cotonou',
-                'warning' => 'GEMINI_API_KEY not configured, using dummy transcription',
+                'warning' => 'GEMINI_API_KEY non configurée, utilisation d\'une transcription fictive',
             ]);
         }
 
@@ -56,7 +56,7 @@ class VoiceController extends Controller
 
             if (!$response->ok()) {
                 return response()->json([
-                    'error' => 'Gemini transcription request failed',
+                    'error' => 'Échec de la requête de transcription Gemini',
                     'details' => $response->json(),
                 ], 500);
             }
@@ -69,7 +69,7 @@ class VoiceController extends Controller
             ]);
         } catch (\Throwable $e) {
             return response()->json([
-                'error' => 'Transcription error',
+                'error' => 'Erreur de transcription',
                 'message' => $e->getMessage(),
             ], 500);
         }

@@ -5,10 +5,10 @@ namespace App\Events;
 use App\Models\Ride;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PresenceChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Queue\SerializesModels;
 
-class RideRequested implements ShouldBroadcast
+class RideRequested implements ShouldBroadcastNow
 {
     use InteractsWithSockets;
     use SerializesModels;

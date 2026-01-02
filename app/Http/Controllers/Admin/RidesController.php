@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Models\Ride;
+use App\Events\RideCancelled;
 
 class RidesController extends Controller
 {
@@ -146,5 +147,23 @@ class RidesController extends Controller
                 'top_reasons' => $cancelledReasons,
             ],
         ]);
+    }
+
+    public function cancel(Request $request, int $id)
+    {
+        $ride = Ride::findOrFail($id);
+
+        if (in_array($ride->status, ['completed', 'cancelled'])) {
+            return response()->json(['message' => 'Impossible d\'annuler une course déjà terminée ou annulée.'], 422);
+        }
+
+        $ride->status = 'cancelled';
+        $ride->cancelled_at = now();
+        $ride->cancellation_reason = 'Annulation par l\'administrateur';
+        $ride->save();
+
+        broadcast(new RideCancelled($ride->fresh(['driver', 'rider']), 'admin', auth()->user()));
+
+        return response()->json(['ok' => true, 'message' => 'Course annulée avec succès.']);
     }
 }

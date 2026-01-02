@@ -59,6 +59,7 @@ Route::prefix('admin')->group(function () {
         Route::post('/drivers/{id}/force-offline', [DriverModerationController::class, 'forceOffline']);
 
         // Users
+        Route::post('/users', [UsersController::class, 'store']);
         Route::get('/users', [UsersController::class, 'index']);
         Route::get('/users/{id}', [UsersController::class, 'show']);
         Route::patch('/users/{id}', [UsersController::class, 'update']);
@@ -70,6 +71,7 @@ Route::prefix('admin')->group(function () {
 
         // Rides
         Route::get('/rides', [RidesController::class, 'index']);
+        Route::post('/rides/{id}/cancel', [RidesController::class, 'cancel']);
         Route::get('/rides/status-breakdown', [RidesController::class, 'statusBreakdown']);
         Route::get('/passengers/{id}/rides', [RidesController::class, 'byPassenger']);
 
@@ -97,6 +99,10 @@ Route::prefix('admin')->group(function () {
         Route::get('/settings', [\App\Http\Controllers\Admin\SettingsController::class, 'index']);
         Route::post('/settings', [\App\Http\Controllers\Admin\SettingsController::class, 'update']);
     });
+
+    Route::middleware(['auth:sanctum', 'role:developer'])->group(function () {
+        Route::get('/dev/logs', [\App\Http\Controllers\Admin\DeveloperController::class, 'logs']);
+    });
 });
 
 Route::middleware(['auth:sanctum'])->prefix('driver')->group(function () {
@@ -122,6 +128,7 @@ Route::middleware(['auth:sanctum', 'role:driver', 'driver.approved'])->prefix('d
     // Portefeuille chauffeur (même contrôleur que passager, basé sur user_id)
     Route::get('/wallet', [WalletController::class, 'show']);
     Route::get('/wallet/transactions/today', [WalletController::class, 'todayTransactions']);
+    Route::post('/wallet/withdraw', [\App\Http\Controllers\WithdrawController::class, 'store']);
     Route::get('/next-offer', [TripsController::class, 'driverNextOffer']);
     Route::post('/trips/{id}/accept', [TripsController::class, 'accept']);
     Route::post('/trips/{id}/decline', [TripsController::class, 'decline']);
