@@ -14,10 +14,20 @@ class UsersController extends Controller
 {
     public function index(Request $request)
     {
+        $currentUser = $request->user();
         $role = $request->query('role');
         $q = $request->query('q');
 
         $query = User::query();
+
+        // 🛡️ Security: Admins should not see developers at all
+        if ($currentUser->role === 'admin') {
+            $query->where('role', '!=', 'developer');
+            if ($role === 'developer') {
+                return response()->json(['data' => [], 'total' => 0, 'current_page' => 1]);
+            }
+        }
+
         if ($role) {
             $query->where('role', $role);
         }
@@ -41,6 +51,19 @@ class UsersController extends Controller
 
     public function update(Request $request, int $id)
     {
+        $currentUser = $request->user();
+        $user = User::findOrFail($id);
+
+        // Security Check: admins cannot modify developers or promote someone to developer
+        if ($currentUser->role === 'admin') {
+            if ($user->role === 'developer') {
+                return response()->json(['message' => 'Un administrateur ne peut pas modifier un développeur.'], 403);
+            }
+            if ($request->has('role') && $request->role === 'developer') {
+                return response()->json(['message' => 'Un administrateur ne peut pas promouvoir un utilisateur au rôle de développeur.'], 403);
+            }
+        }
+
         $data = $request->validate([
             'name' => ['sometimes','string','max:255'],
             'email' => ['sometimes','email'],
@@ -48,15 +71,21 @@ class UsersController extends Controller
             'role' => ['sometimes','in:admin,developer,driver,passenger'],
             'is_active' => ['sometimes','boolean'],
         ]);
-        $user = User::findOrFail($id);
+
         $user->fill($data);
         $user->save();
         return response()->json($user);
     }
 
-    public function destroy(int $id)
+    public function destroy(Request $request, int $id)
     {
+        $currentUser = $request->user();
         $u = User::findOrFail($id);
+        
+        // 🛡️ Security: Admins cannot delete developers
+        if ($currentUser->role === 'admin' && $u->role === 'developer') {
+            return response()->json(['message' => 'Un administrateur ne peut pas supprimer un développeur.'], 403);
+        }
         
         // Supprimer les rides associés (en tant que rider ou driver) avant de supprimer l'utilisateur
         DB::transaction(function () use ($u) {
@@ -93,26 +122,24 @@ class UsersController extends Controller
 
     public function store(Request $request)
     {
-        // 1. Security Check: Only Developer can create users here
+        // 1. Security Check
         $currentUser = $request->user();
-        if (!$currentUser || $currentUser->role !== 'developer') {
-            return response()->json(['message' => 'Unauthorized action.'], 403);
-        }
-
+        
         // 2. Validation
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'unique:users,email'],
-            // Phone is optional or required depending on logic, let's say unique if present
             'phone' => ['required', 'string', 'max:50', 'unique:users,phone'],
             'password' => ['required', 'string', 'min:8'],
-            // Role restriction: developer can create admins, drivers, passengers. 
-            // Creating another developer might be restricted or allowed. Let's allow strictly 'admin' for now as per request
-            // but the UI allows picking role.
-            'role' => ['required', 'in:admin,driver,passenger'], 
+            'role' => ['required', 'in:admin,developer,driver,passenger'], 
         ]);
 
-        // 3. Creation
+        // 3. Extra Security Check for role creation
+        if ($currentUser->role === 'admin' && $data['role'] === 'developer') {
+            return response()->json(['message' => 'Un administrateur ne peut pas créer de compte développeur.'], 403);
+        }
+
+        // 4. Creation
         $user = User::create([
             'name' => $data['name'],
             'email' => $data['email'],
@@ -120,7 +147,7 @@ class UsersController extends Controller
             'password' => Hash::make($data['password']),
             'role' => $data['role'],
             'is_active' => true,
-            'phone_verified_at' => now(), // Auto-verify admins created by super-admin
+            'phone_verified_at' => now(),
         ]);
 
         return response()->json($user, 201);

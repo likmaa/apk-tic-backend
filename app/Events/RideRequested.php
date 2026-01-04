@@ -45,6 +45,10 @@ class RideRequested implements ShouldBroadcastNow
             ],
             'fare' => (int) ($this->ride->fare_amount ?? 0),
             'rider_id' => $this->ride->rider_id,
+            'passenger' => [
+                'name' => $this->ride->passenger_name,
+                'phone' => $this->ride->passenger_phone,
+            ],
         ];
     }
 }

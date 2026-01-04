@@ -29,11 +29,15 @@ class Ride extends Model
         'dropoff_address',
         'offered_driver_id',
         'declined_driver_ids',
+        'passenger_name',
+        'passenger_phone',
         'accepted_at',
         'started_at',
         'completed_at',
         'cancelled_at',
         'cancellation_reason',
+        'vehicle_type',
+        'has_baggage',
     ];
 
     protected $casts = [
@@ -42,6 +46,7 @@ class Ride extends Model
         'completed_at' => 'datetime',
         'cancelled_at' => 'datetime',
         'declined_driver_ids' => 'array',
+        'has_baggage' => 'boolean',
     ];
 
     public function driver()

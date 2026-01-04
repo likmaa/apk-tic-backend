@@ -140,13 +140,15 @@ Route::middleware(['auth:sanctum', 'role:driver', 'driver.approved'])->prefix('d
 Route::middleware(['auth:sanctum', 'role:passenger'])->prefix('passenger')->group(function () {
     Route::get('/ping', fn () => response()->json(['ok' => true, 'area' => 'passenger']));
     Route::get('/rides', [TripsController::class, 'passengerRides']);
+    Route::get('/rides/current', [TripsController::class, 'currentPassengerRide']);
+    Route::get('/rides/active-count', [TripsController::class, 'activeRidesCount']);
     Route::get('/rides/{id}', [TripsController::class, 'passengerRideShow']);
     Route::get('/rides/{id}/wait-assignment', [TripsController::class, 'passengerRideWaitAssignment']);
     Route::get('/addresses', [PassengerAddressController::class, 'index']);
     Route::post('/addresses', [PassengerAddressController::class, 'store']);
     Route::put('/addresses/{id}', [PassengerAddressController::class, 'update']);
     Route::delete('/addresses/{id}', [PassengerAddressController::class, 'destroy']);
-    Route::post('/trips/{id}/cancel', [TripsController::class, 'cancelByPassenger']);
+    Route::post('/rides/{id}/cancel', [TripsController::class, 'cancelByPassenger']);
     Route::get('/wallet', [WalletController::class, 'show']);
     Route::post('/wallet/topup', [WalletController::class, 'topup']);
     Route::post('/rides/{id}/pay', [WalletController::class, 'payRide']);

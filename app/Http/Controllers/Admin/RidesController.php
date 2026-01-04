@@ -151,9 +151,12 @@ class RidesController extends Controller
 
     public function cancel(Request $request, int $id)
     {
+        \Log::info('Admin::cancel called', ['ride_id' => $id, 'admin_id' => auth()->id()]);
+        
         $ride = Ride::findOrFail($id);
 
         if (in_array($ride->status, ['completed', 'cancelled'])) {
+            \Log::warning('Admin::cancel failed - already completed or cancelled', ['ride_id' => $id, 'status' => $ride->status]);
             return response()->json(['message' => 'Impossible d\'annuler une course déjà terminée ou annulée.'], 422);
         }
 
@@ -162,7 +165,9 @@ class RidesController extends Controller
         $ride->cancellation_reason = 'Annulation par l\'administrateur';
         $ride->save();
 
-        broadcast(new RideCancelled($ride->fresh(['driver', 'rider']), 'admin', auth()->user()));
+        \Log::info('Admin::cancel success', ['ride_id' => $id]);
+
+        broadcast(new RideCancelled($ride, 'admin', auth()->user()));
 
         return response()->json(['ok' => true, 'message' => 'Course annulée avec succès.']);
     }

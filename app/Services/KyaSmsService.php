@@ -9,6 +9,7 @@ class KyaSmsService
 {
     protected string $apiKey;
     protected string $baseUrl;
+    protected string $appId;
     protected ?string $from;
 
     public function __construct()
@@ -16,6 +17,7 @@ class KyaSmsService
         // Utiliser les variables d'environnement si disponibles, sinon les valeurs par défaut
         $this->apiKey = env('KYASMS_API_KEY', 'kyasms661efc85b7b3c8f0d90cd7f21097e731e05b029cedcf265319b853dd67');
         $this->baseUrl = env('KYASMS_BASE_URL', 'https://route.kyasms.com/api/v3');
+        $this->appId = env('KYASMS_APP_ID', '9DILGC5Y');
         $this->from = env('KYASMS_FROM', 'TICMITON');
         
         // Log de la configuration (sans exposer la clé complète)
@@ -94,7 +96,7 @@ class KyaSmsService
 
         // Payload conforme à la doc KYA OTP: /otp/create
         $payload = [
-            'appId'    => '9DILGC5Y',      // ton app OTP KYA
+            'appId'    => $this->appId,      // ton app OTP KYA
             'recipient'=> ltrim($phone, '+'), // ex: 22966223344 (selon doc)
             'lang'     => 'fr',
         ];
@@ -155,7 +157,7 @@ class KyaSmsService
 
         // Payload conforme à la doc KYA OTP: /otp/verify
         $payload = [
-            'appId' => '9DILGC5Y',
+            'appId' => $this->appId,
             'key'   => $otpKey,
             'code'  => $code,
         ];

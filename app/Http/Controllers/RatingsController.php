@@ -18,6 +18,7 @@ class RatingsController extends Controller
             'ride_id' => ['required','integer','min:1'],
             'stars' => ['required','integer','min:1','max:5'],
             'comment' => ['nullable','string','max:500'],
+            'tip_amount' => ['nullable','integer','min:0'],
         ]);
 
         $ride = Ride::findOrFail($data['ride_id']);
@@ -66,6 +67,36 @@ class RatingsController extends Controller
                     'points_threshold' => $currentThreshold,
                     'amount' => 5000,
                 ];
+            }
+
+            // Handle Tip
+            $tip = (int) ($data['tip_amount'] ?? 0);
+            if ($tip > 0) {
+                $ride->tip_amount = $tip;
+                $ride->save();
+
+                // Credit driver wallet for TIP
+                $wallet = DB::table('wallets')->where('user_id', $ride->driver_id)->first();
+                if ($wallet) {
+                    $before = (int) $wallet->balance;
+                    $after = $before + $tip;
+
+                    DB::table('wallet_transactions')->insert([
+                        'wallet_id' => $wallet->id,
+                        'type' => 'credit',
+                        'source' => 'ride_tip',
+                        'amount' => $tip,
+                        'balance_before' => $before,
+                        'balance_after' => $after,
+                        'meta' => json_encode(['ride_id' => $ride->id]),
+                        'created_at' => now(),
+                    ]);
+
+                    DB::table('wallets')->where('id', $wallet->id)->update([
+                        'balance' => $after,
+                        'updated_at' => now(),
+                    ]);
+                }
             }
         });
 

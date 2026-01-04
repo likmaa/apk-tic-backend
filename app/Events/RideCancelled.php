@@ -5,6 +5,7 @@ namespace App\Events;
 use App\Models\Ride;
 use App\Models\User;
 use Illuminate\Broadcasting\InteractsWithSockets;
+use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Queue\SerializesModels;
@@ -19,14 +20,27 @@ class RideCancelled implements ShouldBroadcastNow
         public string $cancelledBy,
         public ?User $actor = null
     ) {
-        $this->ride->loadMissing('rider', 'driver');
     }
 
     public function broadcastOn(): array
     {
-        return [
+        $channels = [
             new PrivateChannel('admin.alerts'),
         ];
+
+        if ($this->ride->id) {
+            $channels[] = new PrivateChannel('ride.' . $this->ride->id);
+        }
+
+        if ($this->ride->rider_id) {
+            $channels[] = new PrivateChannel('rider.' . $this->ride->rider_id);
+        }
+
+        if ($this->ride->status === 'cancelled') {
+            $channels[] = new PresenceChannel('drivers');
+        }
+
+        return $channels;
     }
 
     public function broadcastAs(): string

@@ -31,7 +31,10 @@ class TripsController extends Controller
             'dropoff.lng'  => ['required','numeric','between:-180,180'],
             'distance_m'   => ['required','numeric','min:1'],
             'duration_s'   => ['required','numeric','min:1'],
+            'vehicle_type' => ['nullable','string','in:standard,vip'],
         ]);
+
+        $vehicleType = $request->input('vehicle_type', 'standard');
 
         $distance = (float) $request->input('distance_m');
         $duration = (float) $request->input('duration_s');
@@ -72,9 +75,12 @@ class TripsController extends Controller
         $base = (float) ($pricing['base_fare'] ?? 500);        // tarif de base
         $perKm = (float) ($pricing['per_km'] ?? 250);          // tarif par km
         $perMin = (float) ($pricing['per_min'] ?? 50);         // tarif par minute
-        $minFare = (float) ($pricing['min_fare'] ?? 1000);     // tarif minimum
-
         $price = $base + ($perKm * $km) + ($perMin * $min);
+
+        // Multiplicateur VIP
+        if ($vehicleType === 'vip') {
+            $price *= 1.5; // +50% pour le VIP
+        }
 
         $peak = $pricing['peak_hours'] ?? null;
         if (is_array($peak) && !empty($peak['enabled'])) {
@@ -111,15 +117,18 @@ class TripsController extends Controller
             'pickup.lng'   => ['required','numeric','between:-180,180'],
             'dropoff.lat'  => ['required','numeric','between:-90,90'],
             'dropoff.lng'  => ['required','numeric','between:-180,180'],
+            'vehicle_type' => ['nullable','string','in:standard,vip'],
         ]);
+
+        $vehicleType = $request->input('vehicle_type', 'standard');
 
         $pickLat = (float) $request->input('pickup.lat');
         $pickLng = (float) $request->input('pickup.lng');
         $dropLat = (float) $request->input('dropoff.lat');
         $dropLng = (float) $request->input('dropoff.lng');
 
-        // Utilise OSRM public pour récupérer distance et durée
-        $url = 'https://router.project-osrm.org/route/v1/driving/' . $pickLng . ',' . $pickLat . ';' . $dropLng . ',' . $dropLat . '?overview=false';
+        // Utilise OSRM public pour récupérer distance et durée + géométrie
+        $url = 'https://router.project-osrm.org/route/v1/driving/' . $pickLng . ',' . $pickLat . ';' . $dropLng . ',' . $dropLat . '?overview=full&geometries=geojson';
         $resp = Http::timeout(8)->get($url);
         if (!$resp->ok()) {
             return response()->json(['message' => 'Routing failed', 'status' => $resp->status()], 502);
@@ -131,6 +140,7 @@ class TripsController extends Controller
         }
         $distance = (float) ($route['distance'] ?? 0);   // en mètres
         $duration = (float) ($route['duration'] ?? 0);   // en secondes
+        $geometry = $route['geometry'] ?? null;
 
         $km = $distance / 1000.0;
         $min = $duration / 60.0;
@@ -168,9 +178,12 @@ class TripsController extends Controller
         $base = (float) ($pricing['base_fare'] ?? 500);
         $perKm = (float) ($pricing['per_km'] ?? 250);
         $perMin = (float) ($pricing['per_min'] ?? 50);
-        $minFare = (float) ($pricing['min_fare'] ?? 1000);
-
         $price = $base + ($perKm * $km) + ($perMin * $min);
+
+        // Multiplicateur VIP
+        if ($vehicleType === 'vip') {
+            $price *= 1.5; // +50% pour le VIP
+        }
 
         $peak = $pricing['peak_hours'] ?? null;
         if (is_array($peak) && !empty($peak['enabled'])) {
@@ -190,6 +203,7 @@ class TripsController extends Controller
             }
         }
 
+        $minFare = (float) ($pricing['min_fare'] ?? 500);
         $price = max($minFare, (int) round($price, 0));
 
         return response()->json([
@@ -197,6 +211,7 @@ class TripsController extends Controller
             'currency' => 'XOF',
             'eta_s' => (int) round($duration),
             'distance_m' => (int) round($distance),
+            'geometry' => $geometry,
             'source' => 'mapbox',
         ]);
     }
@@ -221,6 +236,10 @@ class TripsController extends Controller
             'pickup_lng'    => ['nullable', 'numeric', 'between:-180,180'],
             'dropoff_lat'   => ['nullable', 'numeric', 'between:-90,90'],
             'dropoff_lng'   => ['nullable', 'numeric', 'between:-180,180'],
+            'passenger_name' => ['nullable', 'string', 'max:255'],
+            'passenger_phone' => ['nullable', 'string', 'max:255'],
+            'vehicle_type'   => ['nullable', 'string', 'in:standard,vip'],
+            'has_baggage'    => ['nullable', 'boolean'],
         ]);
 
         $pickupLat = $data['pickup_lat'] ?? null;
@@ -245,6 +264,10 @@ class TripsController extends Controller
             'dropoff_lat' => $dropoffLat,
             'dropoff_lng' => $dropoffLng,
             'dropoff_address' => $data['dropoff_label'],
+            'passenger_name' => $data['passenger_name'] ?? null,
+            'passenger_phone' => $data['passenger_phone'] ?? null,
+            'vehicle_type' => $data['vehicle_type'] ?? 'standard',
+            'has_baggage' => $data['has_baggage'] ?? false,
             'declined_driver_ids' => [],
         ]);
 
@@ -259,6 +282,10 @@ class TripsController extends Controller
             'status' => $ride->status,
             'price' => $ride->fare_amount,
             'currency' => $ride->currency,
+            'passenger_name' => $ride->passenger_name,
+            'passenger_phone' => $ride->passenger_phone,
+            'vehicle_type' => $ride->vehicle_type,
+            'has_baggage' => (bool)$ride->has_baggage,
         ], 201);
     }
 
@@ -276,6 +303,10 @@ class TripsController extends Controller
             'distance_m'   => ['required','numeric','min:1'],
             'duration_s'   => ['required','numeric','min:1'],
             'price'        => ['required','numeric','min:1'],
+            'passenger_name' => ['nullable','string','max:255'],
+            'passenger_phone' => ['nullable','string','max:255'],
+            'vehicle_type'   => ['nullable','string','in:standard,vip'],
+            'has_baggage'    => ['nullable','boolean'],
         ]);
 
         $pickupLat = (float) $request->input('pickup.lat');
@@ -302,6 +333,10 @@ class TripsController extends Controller
             'dropoff_lat' => $dropoffLat,
             'dropoff_lng' => $dropoffLng,
             'dropoff_address' => $dropoffLabel,
+            'passenger_name' => $request->input('passenger_name'),
+            'passenger_phone' => $request->input('passenger_phone'),
+            'vehicle_type' => $request->input('vehicle_type', 'standard'),
+            'has_baggage' => (bool)$request->input('has_baggage', false),
             'declined_driver_ids' => [],
         ]);
         // True Broadcast: on laisse offered_driver_id à null pour que tous les chauffeurs éligibles voient la course
@@ -317,6 +352,10 @@ class TripsController extends Controller
             'duration_s' => $ride->duration_s,
             'price' => $ride->fare_amount,
             'currency' => $ride->currency,
+            'passenger_name' => $ride->passenger_name,
+            'passenger_phone' => $ride->passenger_phone,
+            'vehicle_type' => $ride->vehicle_type,
+            'has_baggage' => (bool)$ride->has_baggage,
         ], 201);
     }
 
@@ -472,8 +511,12 @@ class TripsController extends Controller
     {
         /** @var User|null $driver */
         $driver = Auth::user();
+        if (!$driver || !$driver->isDriver()) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
         $ride = Ride::findOrFail($id);
-        if ($ride->driver_id !== ($driver?->id) || !in_array($ride->status, ['accepted','ongoing','requested'])) {
+        if (!in_array($ride->status, ['accepted','ongoing','requested'])) {
             return response()->json(['message' => 'Invalid state'], 422);
         }
         $data = $request->validate([
@@ -505,7 +548,7 @@ class TripsController extends Controller
         $ride->cancellation_reason = $data['reason'] ?? null;
         $ride->save();
 
-        broadcast(new RideCancelled($ride->fresh(['driver','rider']), 'passenger', $user));
+        broadcast(new RideCancelled($ride, 'passenger', $user));
 
         return response()->json(['ok' => true, 'ride_id' => $ride->id, 'status' => $ride->status]);
     }
@@ -568,6 +611,38 @@ class TripsController extends Controller
         return response()->json($ride);
     }
 
+    public function currentPassengerRide(Request $request)
+    {
+        /** @var User|null $user */
+        $user = Auth::user();
+        if (!$user || !$user->isPassenger()) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $ride = Ride::where('rider_id', $user->id)
+            ->whereIn('status', ['requested', 'accepted', 'arrived', 'started', 'ongoing'])
+            ->with(['driver', 'vehicle'])
+            ->orderByDesc('id')
+            ->first();
+
+        return response()->json($ride);
+    }
+
+    public function activeRidesCount(Request $request)
+    {
+        /** @var User|null $user */
+        $user = Auth::user();
+        if (!$user || !$user->isPassenger()) {
+            return response()->json(['count' => 0]);
+        }
+
+        $count = Ride::where('rider_id', $user->id)
+            ->whereIn('status', ['requested', 'accepted', 'arrived', 'started', 'ongoing'])
+            ->count();
+
+        return response()->json(['count' => $count]);
+    }
+
     public function passengerRides(Request $request)
     {
         /** @var User|null $user */
@@ -624,6 +699,8 @@ class TripsController extends Controller
                 'name' => $ride->driver->name,
                 'phone' => $ride->driver->phone,
             ] : null,
+            'passenger_name' => $ride->passenger_name,
+            'passenger_phone' => $ride->passenger_phone,
         ]);
     }
 
@@ -707,14 +784,45 @@ class TripsController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        $lat = $driver->last_lat;
+        $lng = $driver->last_lng;
+        
+        $earthRadiusKm = 6371.0;
+        $searchRadiusKm = (float) config('app.search_radius_km', 10.0);
+        
+        $distanceFormula = "(
+            {$earthRadiusKm} * 2 * ASIN(
+                SQRT(
+                    POWER(SIN(RADIANS({$lat} - rides.pickup_lat) / 2), 2) +
+                    COS(RADIANS({$lat})) * COS(RADIANS(rides.pickup_lat)) *
+                    POWER(SIN(RADIANS({$lng} - rides.pickup_lng) / 2), 2)
+                )
+            )
+        )";
+
         $ride = Ride::query()
-            ->where(function ($query) use ($driver) {
+            ->where(function ($query) use ($driver, $distanceFormula, $searchRadiusKm) {
                 $query->where('driver_id', $driver->id)
                     ->whereIn('status', ['accepted', 'ongoing']);
             })
-            ->orWhere(function ($query) use ($driver) {
+            ->orWhere(function ($query) use ($driver, $distanceFormula, $searchRadiusKm) {
                 $query->where('offered_driver_id', $driver->id)
                     ->where('status', 'requested');
+            })
+            ->orWhere(function ($query) use ($driver, $distanceFormula, $searchRadiusKm) {
+                if (!$driver->is_online) {
+                    $query->whereRaw('0 = 1'); // Force empty result for this branch if offline
+                    return;
+                }
+                $query->where('status', 'requested')
+                    ->whereNull('offered_driver_id')
+                    ->whereNotNull('pickup_lat')
+                    ->whereNotNull('pickup_lng')
+                    ->whereRaw("{$distanceFormula} <= ?", [$searchRadiusKm])
+                    ->where(function($q) use ($driver) {
+                        $q->whereNull('declined_driver_ids')
+                          ->orWhereRaw("NOT JSON_CONTAINS(declined_driver_ids, CAST(? AS JSON))", [json_encode($driver->id)]);
+                    });
             })
             ->orderByDesc('id')
             ->first();
@@ -739,6 +847,8 @@ class TripsController extends Controller
             'started_at' => $ride->started_at,
             'completed_at' => $ride->completed_at,
             'rider' => $this->formatPassenger($passenger),
+            'passenger_name' => $ride->passenger_name,
+            'passenger_phone' => $ride->passenger_phone,
         ]);
     }
 
@@ -914,6 +1024,8 @@ class TripsController extends Controller
                     'id' => $ride->id,
                     'status' => $ride->status,
                     'driver' => $this->formatPassenger($driver),
+                    'passenger_name' => $ride->passenger_name,
+                    'passenger_phone' => $ride->passenger_phone,
                 ]);
             }
             usleep($sleepMicroseconds);
