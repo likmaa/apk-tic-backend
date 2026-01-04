@@ -150,6 +150,7 @@ Route::middleware(['auth:sanctum', 'role:passenger'])->prefix('passenger')->grou
     Route::delete('/addresses/{id}', [PassengerAddressController::class, 'destroy']);
     Route::post('/rides/{id}/cancel', [TripsController::class, 'cancelByPassenger']);
     Route::get('/wallet', [WalletController::class, 'show']);
+    Route::get('/wallet/transactions', [WalletController::class, 'todayTransactions']);
     Route::post('/wallet/topup', [WalletController::class, 'topup']);
     Route::post('/rides/{id}/pay', [WalletController::class, 'payRide']);
     Route::get('/rides/{id}/driver-location', [TripsController::class, 'passengerRideDriverLocation']);
