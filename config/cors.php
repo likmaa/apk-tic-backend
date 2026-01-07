@@ -9,9 +9,13 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => array_filter(
-        explode(',', env('CORS_ALLOWED_ORIGINS', ''))
-    ),
+    'allowed_origins' => (function() {
+        $origins = env('CORS_ALLOWED_ORIGINS', '');
+        if ($origins === '*') {
+            return env('APP_ENV') === 'production' ? [] : ['*'];
+        }
+        return array_filter(explode(',', $origins));
+    })(),
 
     'allowed_origins_patterns' => [],
 

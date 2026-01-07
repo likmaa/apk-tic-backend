@@ -81,4 +81,12 @@ class User extends Authenticatable
     {
         return ($this->role ?? null) === 'developer';
     }
+
+    /**
+     * Relationships
+     */
+    public function driverProfile()
+    {
+        return $this->hasOne(DriverProfile::class);
+    }
 }
