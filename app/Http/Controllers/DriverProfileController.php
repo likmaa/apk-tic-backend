@@ -3,17 +3,20 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Models\DriverProfile;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 class DriverProfileController extends Controller
 {
+    /**
+     * Display the driver's profile.
+     */
     public function show(Request $request)
     {
         $user = $request->user();
-
-        $profile = DB::table('driver_profiles')->where('user_id', $user->id)->first();
+        $profile = $user->driverProfile;
 
         return response()->json([
             'user' => [
@@ -21,16 +24,20 @@ class DriverProfileController extends Controller
                 'name' => $user->name,
                 'phone' => $user->phone,
                 'role' => $user->role,
-                'vehicle_number' => $user->vehicle_number,
-                'license_number' => $user->license_number,
                 'photo' => $user->photo,
             ],
             'profile' => $profile ? [
                 'status' => $profile->status,
                 'vehicle_number' => $profile->vehicle_number,
                 'license_number' => $profile->license_number,
+                'vehicle_make' => $profile->vehicle_make,
+                'vehicle_model' => $profile->vehicle_model,
+                'vehicle_year' => $profile->vehicle_year,
+                'vehicle_color' => $profile->vehicle_color,
+                'license_plate' => $profile->license_plate,
+                'vehicle_type' => $profile->vehicle_type,
                 'photo' => $profile->photo,
-                'documents' => $profile->documents ? json_decode($profile->documents, true) : null,
+                'documents' => $profile->documents,
                 'contract_accepted_at' => $profile->contract_accepted_at,
                 'created_at' => $profile->created_at,
                 'updated_at' => $profile->updated_at,
@@ -38,105 +45,79 @@ class DriverProfileController extends Controller
         ]);
     }
 
+    /**
+     * Store or update the driver's profile.
+     */
     public function store(Request $request)
-{
-    $user = $request->user();
+    {
+        $user = $request->user();
 
-    $data = $request->validate([
-        'vehicle_number' => ['nullable', 'string', 'max:64'],
-        'license_number' => ['required', 'string', 'max:64'],
-        'photo' => ['nullable', 'string', 'max:255'],
-        'documents' => ['nullable', 'array'],
-    ]);
+        $data = $request->validate([
+            'vehicle_number' => ['nullable', 'string', 'max:64'],
+            'license_number' => ['required', 'string', 'max:64'],
+            'vehicle_make' => ['nullable', 'string', 'max:100'],
+            'vehicle_model' => ['nullable', 'string', 'max:100'],
+            'vehicle_year' => ['nullable', 'string', 'max:4'],
+            'vehicle_color' => ['nullable', 'string', 'max:50'],
+            'license_plate' => ['nullable', 'string', 'max:20'],
+            'vehicle_type' => ['nullable', 'string', 'in:sedan,suv,van,compact'],
+            'photo' => ['nullable', 'string', 'max:255'],
+            'documents' => ['nullable', 'array'],
+        ]);
 
-    $profile = null;
+        $profile = DB::transaction(function () use ($user, $data) {
+            // Update User fields (legacy support)
+            if (!empty($data['photo'])) {
+                $user->photo = $data['photo'];
+            }
+            $user->save();
 
-    DB::transaction(function () use ($user, $data, &$profile) {
-        // vehicle_number peut être absent ou null
-        $user->vehicle_number = $data['vehicle_number'] ?? null;
-        $user->license_number = $data['license_number'];
+            // Update or Create Driver Profile
+            return DriverProfile::updateOrCreate(
+                ['user_id' => $user->id],
+                [
+                    'vehicle_number' => $data['vehicle_number'] ?? null,
+                    'license_number' => $data['license_number'],
+                    'vehicle_make' => $data['vehicle_make'] ?? null,
+                    'vehicle_model' => $data['vehicle_model'] ?? null,
+                    'vehicle_year' => $data['vehicle_year'] ?? null,
+                    'vehicle_color' => $data['vehicle_color'] ?? null,
+                    'license_plate' => $data['license_plate'] ?? null,
+                    'vehicle_type' => $data['vehicle_type'] ?? 'sedan',
+                    'photo' => $data['photo'] ?? $user->photo,
+                    'status' => 'pending',
+                    'documents' => $data['documents'] ?? null,
+                    'updated_at' => now(),
+                ]
+            );
+        });
 
-        // Bascule le compte en role "driver" pour qu'il apparaisse dans la modération
-        if (($user->role ?? null) !== 'driver') {
-        }
+        return response()->json([
+            'ok' => true,
+            'message' => 'Driver profile submitted, waiting for admin approval.',
+            'profile' => $profile,
+        ], 201);
+    }
 
-        if (!empty($data['photo'])) {
-            $user->photo = $data['photo'];
-        }
-
-        $user->save();
-
-        $payload = [
-            'vehicle_number' => $data['vehicle_number'] ?? null,
-            'license_number' => $data['license_number'],
-            'photo' => $data['photo'] ?? $user->photo,
-            'status' => 'pending',
-            'updated_at' => now(),
-        ];
-
-        if (array_key_exists('documents', $data)) {
-            $payload['documents'] = $data['documents'] !== null
-                ? json_encode($data['documents'])
-                : null;
-        }
-
-        DB::table('driver_profiles')->updateOrInsert(
-            ['user_id' => $user->id],
-            $payload + ['created_at' => now()]
-        );
-
-        $profile = DB::table('driver_profiles')->where('user_id', $user->id)->first();
-    });
-
-    return response()->json([
-        'ok' => true,
-        'message' => 'Driver profile submitted, waiting for admin approval.',
-        'profile' => $profile ? [
-            'status' => $profile->status,
-            'vehicle_number' => $profile->vehicle_number,
-            'license_number' => $profile->license_number,
-            'photo' => $profile->photo,
-            'documents' => $profile->documents ? json_decode($profile->documents, true) : null,
-            'contract_accepted_at' => $profile->contract_accepted_at,
-            'created_at' => $profile->created_at,
-            'updated_at' => $profile->updated_at,
-        ] : null,
-    ], 201);
-}
-
+    /**
+     * Accept the driver contract.
+     */
     public function acceptContract(Request $request)
     {
         $user = $request->user();
 
-        // Vérifier si le profil existe, sinon le créer
-        $profile = DB::table('driver_profiles')->where('user_id', $user->id)->first();
-        
-        if (!$profile) {
-            // Créer le profil driver avec status='pending' si il n'existe pas
-            DB::table('driver_profiles')->insert([
-                'user_id' => $user->id,
-                'status' => 'pending',
+        $profile = DriverProfile::updateOrCreate(
+            ['user_id' => $user->id],
+            [
                 'contract_accepted_at' => now(),
-                'created_at' => now(),
                 'updated_at' => now(),
-            ]);
-        } else {
-            // Mettre à jour le contrat accepté
-            DB::table('driver_profiles')
-                ->where('user_id', $user->id)
-                ->update([
-                    'contract_accepted_at' => now(),
-                    'updated_at' => now(),
-                ]);
-        }
-
-        // Récupérer le profil mis à jour pour retourner contract_accepted_at
-        $profile = DB::table('driver_profiles')->where('user_id', $user->id)->first();
+            ]
+        );
 
         return response()->json([
             'ok' => true,
             'user_id' => $user->id,
-            'contract_accepted_at' => $profile->contract_accepted_at ?? now()->toIso8601String(),
+            'contract_accepted_at' => $profile->contract_accepted_at,
         ]);
     }
 }

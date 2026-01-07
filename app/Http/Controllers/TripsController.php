@@ -25,13 +25,13 @@ class TripsController extends Controller
     public function estimate(Request $request)
     {
         $data = $request->validate([
-            'pickup.lat'   => ['required','numeric','between:-90,90'],
-            'pickup.lng'   => ['required','numeric','between:-180,180'],
-            'dropoff.lat'  => ['required','numeric','between:-90,90'],
-            'dropoff.lng'  => ['required','numeric','between:-180,180'],
-            'distance_m'   => ['required','numeric','min:1'],
-            'duration_s'   => ['required','numeric','min:1'],
-            'vehicle_type' => ['nullable','string','in:standard,vip'],
+            'pickup.lat' => ['required', 'numeric', 'between:-90,90'],
+            'pickup.lng' => ['required', 'numeric', 'between:-180,180'],
+            'dropoff.lat' => ['required', 'numeric', 'between:-90,90'],
+            'dropoff.lng' => ['required', 'numeric', 'between:-180,180'],
+            'distance_m' => ['required', 'numeric', 'min:1'],
+            'duration_s' => ['required', 'numeric', 'min:1'],
+            'vehicle_type' => ['nullable', 'string', 'in:standard,vip'],
         ]);
 
         $vehicleType = $request->input('vehicle_type', 'standard');
@@ -113,11 +113,11 @@ class TripsController extends Controller
     public function estimateFromCoords(Request $request)
     {
         $data = $request->validate([
-            'pickup.lat'   => ['required','numeric','between:-90,90'],
-            'pickup.lng'   => ['required','numeric','between:-180,180'],
-            'dropoff.lat'  => ['required','numeric','between:-90,90'],
-            'dropoff.lng'  => ['required','numeric','between:-180,180'],
-            'vehicle_type' => ['nullable','string','in:standard,vip'],
+            'pickup.lat' => ['required', 'numeric', 'between:-90,90'],
+            'pickup.lng' => ['required', 'numeric', 'between:-180,180'],
+            'dropoff.lat' => ['required', 'numeric', 'between:-90,90'],
+            'dropoff.lng' => ['required', 'numeric', 'between:-180,180'],
+            'vehicle_type' => ['nullable', 'string', 'in:standard,vip'],
         ]);
 
         $vehicleType = $request->input('vehicle_type', 'standard');
@@ -229,17 +229,17 @@ class TripsController extends Controller
         }
 
         $data = $request->validate([
-            'pickup_label'  => ['required', 'string', 'max:255'],
+            'pickup_label' => ['required', 'string', 'max:255'],
             'dropoff_label' => ['required', 'string', 'max:255'],
-            'price'         => ['required', 'numeric', 'min:1'],
-            'pickup_lat'    => ['nullable', 'numeric', 'between:-90,90'],
-            'pickup_lng'    => ['nullable', 'numeric', 'between:-180,180'],
-            'dropoff_lat'   => ['nullable', 'numeric', 'between:-90,90'],
-            'dropoff_lng'   => ['nullable', 'numeric', 'between:-180,180'],
+            'price' => ['required', 'numeric', 'min:1'],
+            'pickup_lat' => ['nullable', 'numeric', 'between:-90,90'],
+            'pickup_lng' => ['nullable', 'numeric', 'between:-180,180'],
+            'dropoff_lat' => ['nullable', 'numeric', 'between:-90,90'],
+            'dropoff_lng' => ['nullable', 'numeric', 'between:-180,180'],
             'passenger_name' => ['nullable', 'string', 'max:255'],
             'passenger_phone' => ['nullable', 'string', 'max:255'],
-            'vehicle_type'   => ['nullable', 'string', 'in:standard,vip'],
-            'has_baggage'    => ['nullable', 'boolean'],
+            'vehicle_type' => ['nullable', 'string', 'in:standard,vip'],
+            'has_baggage' => ['nullable', 'boolean'],
         ]);
 
         $pickupLat = $data['pickup_lat'] ?? null;
@@ -285,7 +285,7 @@ class TripsController extends Controller
             'passenger_name' => $ride->passenger_name,
             'passenger_phone' => $ride->passenger_phone,
             'vehicle_type' => $ride->vehicle_type,
-            'has_baggage' => (bool)$ride->has_baggage,
+            'has_baggage' => (bool) $ride->has_baggage,
         ], 201);
     }
 
@@ -294,19 +294,19 @@ class TripsController extends Controller
         /** @var User|null $user */
         $user = Auth::user();
         $data = $request->validate([
-            'pickup.lat'   => ['required','numeric','between:-90,90'],
-            'pickup.lng'   => ['required','numeric','between:-180,180'],
-            'pickup.label' => ['nullable','string','max:255'],
-            'dropoff.lat'  => ['required','numeric','between:-90,90'],
-            'dropoff.lng'  => ['required','numeric','between:-180,180'],
-            'dropoff.label'=> ['nullable','string','max:255'],
-            'distance_m'   => ['required','numeric','min:1'],
-            'duration_s'   => ['required','numeric','min:1'],
-            'price'        => ['required','numeric','min:1'],
-            'passenger_name' => ['nullable','string','max:255'],
-            'passenger_phone' => ['nullable','string','max:255'],
-            'vehicle_type'   => ['nullable','string','in:standard,vip'],
-            'has_baggage'    => ['nullable','boolean'],
+            'pickup.lat' => ['required', 'numeric', 'between:-90,90'],
+            'pickup.lng' => ['required', 'numeric', 'between:-180,180'],
+            'pickup.label' => ['nullable', 'string', 'max:255'],
+            'dropoff.lat' => ['required', 'numeric', 'between:-90,90'],
+            'dropoff.lng' => ['required', 'numeric', 'between:-180,180'],
+            'dropoff.label' => ['nullable', 'string', 'max:255'],
+            'distance_m' => ['required', 'numeric', 'min:1'],
+            'duration_s' => ['required', 'numeric', 'min:1'],
+            'price' => ['required', 'numeric', 'min:1'],
+            'passenger_name' => ['nullable', 'string', 'max:255'],
+            'passenger_phone' => ['nullable', 'string', 'max:255'],
+            'vehicle_type' => ['nullable', 'string', 'in:standard,vip'],
+            'has_baggage' => ['nullable', 'boolean'],
         ]);
 
         $pickupLat = (float) $request->input('pickup.lat');
@@ -336,7 +336,7 @@ class TripsController extends Controller
             'passenger_name' => $request->input('passenger_name'),
             'passenger_phone' => $request->input('passenger_phone'),
             'vehicle_type' => $request->input('vehicle_type', 'standard'),
-            'has_baggage' => (bool)$request->input('has_baggage', false),
+            'has_baggage' => (bool) $request->input('has_baggage', false),
             'declined_driver_ids' => [],
         ]);
         // True Broadcast: on laisse offered_driver_id à null pour que tous les chauffeurs éligibles voient la course
@@ -355,7 +355,7 @@ class TripsController extends Controller
             'passenger_name' => $ride->passenger_name,
             'passenger_phone' => $ride->passenger_phone,
             'vehicle_type' => $ride->vehicle_type,
-            'has_baggage' => (bool)$ride->has_baggage,
+            'has_baggage' => (bool) $ride->has_baggage,
         ], 201);
     }
 
@@ -441,9 +441,9 @@ class TripsController extends Controller
         $ride->status = 'ongoing';
         $ride->started_at = now();
         $ride->save();
-        
+
         broadcast(new RideStarted($ride));
-        
+
         return response()->json(['ok' => true, 'ride_id' => $ride->id, 'status' => $ride->status]);
     }
 
@@ -470,7 +470,7 @@ class TripsController extends Controller
             // Créditer le portefeuille du chauffeur
             $walletController = new WalletController();
             $wallet = DB::table('wallets')->where('user_id', $driver->id)->first();
-            
+
             if (!$wallet) {
                 DB::table('wallets')->insert([
                     'user_id' => $driver->id,
@@ -516,18 +516,18 @@ class TripsController extends Controller
         }
 
         $ride = Ride::findOrFail($id);
-        if (!in_array($ride->status, ['accepted','ongoing','requested'])) {
+        if (!in_array($ride->status, ['accepted', 'ongoing', 'requested'])) {
             return response()->json(['message' => 'Invalid state'], 422);
         }
         $data = $request->validate([
-            'reason' => ['nullable','string','max:120'],
+            'reason' => ['nullable', 'string', 'max:120'],
         ]);
         $ride->status = 'cancelled';
         $ride->cancelled_at = now();
         $ride->cancellation_reason = $data['reason'] ?? null;
         $ride->save();
 
-        broadcast(new RideCancelled($ride->fresh(['driver','rider']), 'driver', $driver));
+        broadcast(new RideCancelled($ride->fresh(['driver', 'rider']), 'driver', $driver));
 
         return response()->json(['ok' => true, 'ride_id' => $ride->id, 'status' => $ride->status]);
     }
@@ -537,11 +537,11 @@ class TripsController extends Controller
         /** @var User|null $user */
         $user = Auth::user();
         $ride = Ride::findOrFail($id);
-        if ($ride->rider_id !== ($user?->id) || !in_array($ride->status, ['requested','accepted'])) {
+        if ($ride->rider_id !== ($user?->id) || !in_array($ride->status, ['requested', 'accepted'])) {
             return response()->json(['message' => 'Invalid state'], 422);
         }
         $data = $request->validate([
-            'reason' => ['nullable','string','max:120'],
+            'reason' => ['nullable', 'string', 'max:120'],
         ]);
         $ride->status = 'cancelled';
         $ride->cancelled_at = now();
@@ -562,7 +562,7 @@ class TripsController extends Controller
         }
 
         $data = $request->validate([
-            'online' => ['required','boolean'],
+            'online' => ['required', 'boolean'],
         ]);
 
         $driver->is_online = (bool) $data['online'];
@@ -621,7 +621,7 @@ class TripsController extends Controller
 
         $ride = Ride::where('rider_id', $user->id)
             ->whereIn('status', ['requested', 'accepted', 'arrived', 'started', 'ongoing'])
-            ->with(['driver', 'vehicle'])
+            ->with(['driver.driverProfile'])
             ->orderByDesc('id')
             ->first();
 
@@ -670,7 +670,7 @@ class TripsController extends Controller
         if (!$user || !$user->isPassenger()) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
-        $ride = Ride::with('driver')->findOrFail($id);
+        $ride = Ride::with('driver.driverProfile')->findOrFail($id);
         if ($ride->rider_id !== $user->id) {
             return response()->json(['message' => 'Not your ride'], 403);
         }
@@ -698,6 +698,15 @@ class TripsController extends Controller
                 'id' => $ride->driver->id,
                 'name' => $ride->driver->name,
                 'phone' => $ride->driver->phone,
+                'photo' => $ride->driver->photo,
+                'vehicle' => $ride->driver->driverProfile ? [
+                    'make' => $ride->driver->driverProfile->vehicle_make,
+                    'model' => $ride->driver->driverProfile->vehicle_model,
+                    'year' => $ride->driver->driverProfile->vehicle_year,
+                    'color' => $ride->driver->driverProfile->vehicle_color,
+                    'license_plate' => $ride->driver->driverProfile->license_plate,
+                    'type' => $ride->driver->driverProfile->vehicle_type,
+                ] : null,
             ] : null,
             'passenger_name' => $ride->passenger_name,
             'passenger_phone' => $ride->passenger_phone,
@@ -786,10 +795,10 @@ class TripsController extends Controller
 
         $lat = $driver->last_lat;
         $lng = $driver->last_lng;
-        
+
         $earthRadiusKm = 6371.0;
         $searchRadiusKm = (float) config('app.search_radius_km', 10.0);
-        
+
         $distanceFormula = "(
             {$earthRadiusKm} * 2 * ASIN(
                 SQRT(
@@ -819,9 +828,9 @@ class TripsController extends Controller
                     ->whereNotNull('pickup_lat')
                     ->whereNotNull('pickup_lng')
                     ->whereRaw("{$distanceFormula} <= ?", [$searchRadiusKm])
-                    ->where(function($q) use ($driver) {
+                    ->where(function ($q) use ($driver) {
                         $q->whereNull('declined_driver_ids')
-                          ->orWhereRaw("NOT JSON_CONTAINS(declined_driver_ids, CAST(? AS JSON))", [json_encode($driver->id)]);
+                            ->orWhereRaw("NOT JSON_CONTAINS(declined_driver_ids, CAST(? AS JSON))", [json_encode($driver->id)]);
                     });
             })
             ->orderByDesc('id')
@@ -864,14 +873,14 @@ class TripsController extends Controller
         // On cherche une course 'requested' dans un rayon de 10km du chauffeur
         $lat = $driver->last_lat;
         $lng = $driver->last_lng;
-        
+
         if ($lat === null || $lng === null) {
             return response()->json(null, 204);
         }
 
         $earthRadiusKm = 6371.0;
         $searchRadiusKm = (float) config('app.search_radius_km', 10.0);
-        
+
         $distanceFormula = "(
             {$earthRadiusKm} * 2 * ASIN(
                 SQRT(
@@ -889,9 +898,9 @@ class TripsController extends Controller
             ->whereRaw("{$distanceFormula} <= ?", [$searchRadiusKm]);
 
         // Exclure les courses déjà déclinées par ce chauffeur
-        $ride->where(function($q) use ($driver) {
+        $ride->where(function ($q) use ($driver) {
             $q->whereNull('declined_driver_ids')
-              ->orWhereRaw("NOT JSON_CONTAINS(declined_driver_ids, CAST(? AS JSON))", [json_encode($driver->id)]);
+                ->orWhereRaw("NOT JSON_CONTAINS(declined_driver_ids, CAST(? AS JSON))", [json_encode($driver->id)]);
         });
 
         $ride = $ride->orderByDesc('id')->first();
@@ -924,11 +933,11 @@ class TripsController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        
+
 
         $data = $request->validate([
-            'lat' => ['required','numeric','between:-90,90'],
-            'lng' => ['required','numeric','between:-180,180'],
+            'lat' => ['required', 'numeric', 'between:-90,90'],
+            'lng' => ['required', 'numeric', 'between:-180,180'],
         ]);
 
         $driver->last_lat = (float) $data['lat'];
@@ -1063,7 +1072,7 @@ class TripsController extends Controller
             $ride->driver_id ? [$ride->driver_id] : []
         );
 
-        $ids = array_filter(array_map(fn ($id) => $id ? (int) $id : null, $ids));
+        $ids = array_filter(array_map(fn($id) => $id ? (int) $id : null, $ids));
 
         return array_values(array_unique($ids));
     }
