@@ -100,6 +100,7 @@ class TripsController extends Controller
             }
         }
 
+        $minFare = (float) ($pricing['min_fare'] ?? 1000);
         $price = max($minFare, (int) round($price, 0));
 
         return response()->json([
