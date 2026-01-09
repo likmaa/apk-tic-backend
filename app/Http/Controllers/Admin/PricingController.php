@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use App\Models\PricingSetting;
 
 class PricingController extends Controller
@@ -26,6 +27,9 @@ class PricingController extends Controller
                 'peak_hours_multiplier' => 1.0,
                 'peak_hours_start_time' => '17:00:00',
                 'peak_hours_end_time' => '20:00:00',
+                'platform_commission_pct' => 70,
+                'driver_commission_pct' => 20,
+                'maintenance_commission_pct' => 10,
             ]);
         }
 
@@ -41,6 +45,11 @@ class PricingController extends Controller
                 'start_time' => substr((string) $setting->peak_hours_start_time, 0, 5),
                 'end_time' => substr((string) $setting->peak_hours_end_time, 0, 5),
             ],
+            'commission' => [
+                'platform_pct' => (int) ($setting->platform_commission_pct ?? 70),
+                'driver_pct' => (int) ($setting->driver_commission_pct ?? 20),
+                'maintenance_pct' => (int) ($setting->maintenance_commission_pct ?? 10),
+            ],
         ];
 
         return response()->json($config);
@@ -49,16 +58,20 @@ class PricingController extends Controller
     public function update(Request $request)
     {
         $data = $request->validate([
-            'base_fare' => ['sometimes','numeric','min:0'],
-            'per_km' => ['sometimes','numeric','min:0'],
-            'per_min' => ['sometimes','numeric','min:0'],
-            'min_fare' => ['sometimes','numeric','min:0'],
-            'zones' => ['sometimes','array'],
-            'peak_hours' => ['sometimes','array'],
-            'peak_hours.enabled' => ['sometimes','boolean'],
-            'peak_hours.multiplier' => ['sometimes','numeric','min:0'],
-            'peak_hours.start_time' => ['sometimes','string'],
-            'peak_hours.end_time' => ['sometimes','string'],
+            'base_fare' => ['sometimes', 'numeric', 'min:0'],
+            'per_km' => ['sometimes', 'numeric', 'min:0'],
+            'per_min' => ['sometimes', 'numeric', 'min:0'],
+            'min_fare' => ['sometimes', 'numeric', 'min:0'],
+            'zones' => ['sometimes', 'array'],
+            'peak_hours' => ['sometimes', 'array'],
+            'peak_hours.enabled' => ['sometimes', 'boolean'],
+            'peak_hours.multiplier' => ['sometimes', 'numeric', 'min:0'],
+            'peak_hours.start_time' => ['sometimes', 'string'],
+            'peak_hours.end_time' => ['sometimes', 'string'],
+            'commission' => ['sometimes', 'array'],
+            'commission.platform_pct' => ['sometimes', 'integer', 'min:0', 'max:100'],
+            'commission.driver_pct' => ['sometimes', 'integer', 'min:0', 'max:100'],
+            'commission.maintenance_pct' => ['sometimes', 'integer', 'min:0', 'max:100'],
         ]);
         $setting = PricingSetting::query()->first() ?? new PricingSetting();
 
@@ -92,9 +105,25 @@ class PricingController extends Controller
                 $setting->peak_hours_end_time = $ph['end_time'] . ':00';
             }
         }
+        if (array_key_exists('commission', $data)) {
+            $comm = $data['commission'];
+            if (array_key_exists('platform_pct', $comm)) {
+                $setting->platform_commission_pct = (int) $comm['platform_pct'];
+            }
+            if (array_key_exists('driver_pct', $comm)) {
+                $setting->driver_commission_pct = (int) $comm['driver_pct'];
+            }
+            if (array_key_exists('maintenance_pct', $comm)) {
+                $setting->maintenance_commission_pct = (int) $comm['maintenance_pct'];
+            }
+        }
 
         $setting->save();
+
+        // Clear commission cache so new rates take effect immediately
+        Cache::forget('pricing.commission');
 
         return $this->get();
     }
 }
+

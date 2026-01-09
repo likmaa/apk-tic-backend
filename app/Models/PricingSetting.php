@@ -21,11 +21,18 @@ class PricingSetting extends Model
         'peak_hours_start_time',
         'peak_hours_end_time',
         'zones',
+        'platform_commission_pct',
+        'driver_commission_pct',
+        'maintenance_commission_pct',
     ];
 
     protected $casts = [
         'peak_hours_enabled' => 'boolean',
         'peak_hours_multiplier' => 'float',
         'zones' => 'array',
+        'platform_commission_pct' => 'integer',
+        'driver_commission_pct' => 'integer',
+        'maintenance_commission_pct' => 'integer',
     ];
 }
+

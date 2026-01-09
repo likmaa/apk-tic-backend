@@ -459,11 +459,35 @@ class TripsController extends Controller
 
         return DB::transaction(function () use ($ride, $driver) {
             $fare = (int) $ride->fare_amount;
-            $commission = (int) round($fare * 0.85); // Platform gets 85%
-            $earn = $fare - $commission; // Driver gets 15% (or $fare * 0.15)
 
-            $ride->commission_amount = $commission;
-            $ride->driver_earnings_amount = $earn;
+            // Get commission rates from settings (defaults: 70% platform, 20% driver, 10% maintenance)
+            $setting = Cache::remember('pricing.commission', 60, function () {
+                $s = PricingSetting::query()->first();
+                return [
+                    'platform_pct' => $s?->platform_commission_pct ?? 70,
+                    'driver_pct' => $s?->driver_commission_pct ?? 20,
+                    'maintenance_pct' => $s?->maintenance_commission_pct ?? 10,
+                ];
+            });
+
+            $platformPct = (int) $setting['platform_pct'];
+            $driverPct = (int) $setting['driver_pct'];
+            $maintenancePct = (int) $setting['maintenance_pct'];
+
+            // Calculate amounts based on percentages
+            $platformAmount = (int) round($fare * ($platformPct / 100));
+            $driverAmount = (int) round($fare * ($driverPct / 100));
+            $maintenanceAmount = (int) round($fare * ($maintenancePct / 100));
+
+            // Ensure total equals fare (adjust platform amount for rounding)
+            $total = $platformAmount + $driverAmount + $maintenanceAmount;
+            if ($total !== $fare) {
+                $platformAmount += ($fare - $total);
+            }
+
+            // Store commission_amount as platform + maintenance (total retained by app)
+            $ride->commission_amount = $platformAmount + $maintenanceAmount;
+            $ride->driver_earnings_amount = $driverAmount;
             $ride->status = 'completed';
             $ride->completed_at = now();
             $ride->save();
@@ -484,13 +508,13 @@ class TripsController extends Controller
             }
 
             $before = (int) $wallet->balance;
-            $after = $before + $earn;
+            $after = $before + $driverAmount;
 
             DB::table('wallet_transactions')->insert([
                 'wallet_id' => $wallet->id,
                 'type' => 'credit',
                 'source' => 'ride_earnings',
-                'amount' => $earn,
+                'amount' => $driverAmount,
                 'balance_before' => $before,
                 'balance_after' => $after,
                 'meta' => json_encode(['ride_id' => $ride->id]),
@@ -504,7 +528,7 @@ class TripsController extends Controller
 
             broadcast(new RideCompleted($ride));
 
-            return response()->json(['ok' => true, 'ride_id' => $ride->id, 'status' => $ride->status, 'earned' => $earn]);
+            return response()->json(['ok' => true, 'ride_id' => $ride->id, 'status' => $ride->status, 'earned' => $driverAmount]);
         });
     }
 
