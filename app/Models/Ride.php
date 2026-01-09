@@ -38,6 +38,8 @@ class Ride extends Model
         'cancellation_reason',
         'vehicle_type',
         'has_baggage',
+        'total_stop_duration_s',
+        'stop_started_at',
     ];
 
     protected $casts = [
@@ -45,6 +47,7 @@ class Ride extends Model
         'started_at' => 'datetime',
         'completed_at' => 'datetime',
         'cancelled_at' => 'datetime',
+        'stop_started_at' => 'datetime',
         'declined_driver_ids' => 'array',
         'has_baggage' => 'boolean',
     ];

@@ -24,6 +24,12 @@ class PricingSetting extends Model
         'platform_commission_pct',
         'driver_commission_pct',
         'maintenance_commission_pct',
+        'weather_multiplier',
+        'weather_mode_enabled',
+        'night_multiplier',
+        'night_start_time',
+        'night_end_time',
+        'stop_rate_per_min',
     ];
 
     protected $casts = [
@@ -33,6 +39,10 @@ class PricingSetting extends Model
         'platform_commission_pct' => 'integer',
         'driver_commission_pct' => 'integer',
         'maintenance_commission_pct' => 'integer',
+        'weather_multiplier' => 'float',
+        'weather_mode_enabled' => 'boolean',
+        'night_multiplier' => 'float',
+        'stop_rate_per_min' => 'integer',
     ];
 }
 

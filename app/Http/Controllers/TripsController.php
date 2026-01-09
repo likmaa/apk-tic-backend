@@ -14,6 +14,7 @@ use App\Events\RideDeclined;
 use App\Events\RideCancelled;
 use App\Events\RideStarted;
 use App\Events\RideCompleted;
+use App\Events\RideStopUpdated;
 
 use App\Models\PricingSetting;
 
@@ -48,21 +49,16 @@ class TripsController extends Controller
                 return [
                     'base_fare' => 500,
                     'per_km' => 250,
-                    'per_min' => 50,
                     'min_fare' => 1000,
-                    'peak_hours' => [
-                        'enabled' => false,
-                        'multiplier' => 1.0,
-                        'start_time' => '17:00',
-                        'end_time' => '20:00',
-                    ],
+                    'peak_hours' => ['enabled' => false, 'multiplier' => 1.0, 'start_time' => '17:00', 'end_time' => '20:00'],
+                    'weather' => ['enabled' => false, 'multiplier' => 1.0],
+                    'night' => ['multiplier' => 1.0, 'start_time' => '22:00', 'end_time' => '06:00'],
                 ];
             }
 
             return [
                 'base_fare' => (int) $setting->base_fare,
                 'per_km' => (int) $setting->per_km,
-                'per_min' => (int) $setting->per_min,
                 'min_fare' => (int) $setting->min_fare,
                 'peak_hours' => [
                     'enabled' => (bool) $setting->peak_hours_enabled,
@@ -70,33 +66,48 @@ class TripsController extends Controller
                     'start_time' => substr((string) $setting->peak_hours_start_time, 0, 5),
                     'end_time' => substr((string) $setting->peak_hours_end_time, 0, 5),
                 ],
+                'weather' => [
+                    'enabled' => (bool) $setting->weather_mode_enabled,
+                    'multiplier' => (float) $setting->weather_multiplier,
+                ],
+                'night' => [
+                    'multiplier' => (float) $setting->night_multiplier,
+                    'start_time' => substr((string) $setting->night_start_time, 0, 5),
+                    'end_time' => substr((string) $setting->night_end_time, 0, 5),
+                ],
             ];
         });
-        $base = (float) ($pricing['base_fare'] ?? 500);        // tarif de base
-        $perKm = (float) ($pricing['per_km'] ?? 250);          // tarif par km
-        $perMin = (float) ($pricing['per_min'] ?? 50);         // tarif par minute
-        $price = $base + ($perKm * $km) + ($perMin * $min);
+
+        $base = (float) ($pricing['base_fare'] ?? 500);
+        $perKm = (float) ($pricing['per_km'] ?? 250);
+
+        // Formule simplifiée : Base + (Distance_km * Tarif/km)
+        $price = $base + ($perKm * $km);
 
         // Multiplicateur VIP
         if ($vehicleType === 'vip') {
-            $price *= 1.5; // +50% pour le VIP
+            $price *= 1.5;
         }
 
+        // Multiplicateur Heures de Pointe
         $peak = $pricing['peak_hours'] ?? null;
         if (is_array($peak) && !empty($peak['enabled'])) {
-            $multiplier = (float) ($peak['multiplier'] ?? 1.0);
-            $start = $peak['start_time'] ?? '17:00';
-            $end = $peak['end_time'] ?? '20:00';
-            $nowTime = now()->format('H:i');
-
-            if ($start <= $end) {
-                $inRange = $nowTime >= $start && $nowTime <= $end;
-            } else {
-                $inRange = $nowTime >= $start || $nowTime <= $end;
+            if ($this->isCurrentlyInTimeRange($peak['start_time'], $peak['end_time'])) {
+                $price *= (float) ($peak['multiplier'] ?? 1.0);
             }
+        }
 
-            if ($inRange && $multiplier > 0) {
-                $price *= $multiplier;
+        // Multiplicateur Météo (Pluie)
+        $weather = $pricing['weather'] ?? null;
+        if (is_array($weather) && !empty($weather['enabled'])) {
+            $price *= (float) ($weather['multiplier'] ?? 1.0);
+        }
+
+        // Multiplicateur Nuit
+        $night = $pricing['night'] ?? null;
+        if (is_array($night) && (float) ($night['multiplier'] ?? 1.0) > 1.0) {
+            if ($this->isCurrentlyInTimeRange($night['start_time'], $night['end_time'])) {
+                $price *= (float) $night['multiplier'];
             }
         }
 
@@ -151,22 +162,17 @@ class TripsController extends Controller
             if (!$setting) {
                 return [
                     'base_fare' => 500,
-                    'per_km' => 225,
-                    'per_min' => 50,
-                    'min_fare' => 500,
-                    'peak_hours' => [
-                        'enabled' => false,
-                        'multiplier' => 1.0,
-                        'start_time' => '17:00',
-                        'end_time' => '20:00',
-                    ],
+                    'per_km' => 250,
+                    'min_fare' => 1000,
+                    'peak_hours' => ['enabled' => false, 'multiplier' => 1.0, 'start_time' => '17:00', 'end_time' => '20:00'],
+                    'weather' => ['enabled' => false, 'multiplier' => 1.0],
+                    'night' => ['multiplier' => 1.0, 'start_time' => '22:00', 'end_time' => '06:00'],
                 ];
             }
 
             return [
                 'base_fare' => (int) $setting->base_fare,
                 'per_km' => (int) $setting->per_km,
-                'per_min' => (int) $setting->per_min,
                 'min_fare' => (int) $setting->min_fare,
                 'peak_hours' => [
                     'enabled' => (bool) $setting->peak_hours_enabled,
@@ -174,37 +180,50 @@ class TripsController extends Controller
                     'start_time' => substr((string) $setting->peak_hours_start_time, 0, 5),
                     'end_time' => substr((string) $setting->peak_hours_end_time, 0, 5),
                 ],
+                'weather' => [
+                    'enabled' => (bool) $setting->weather_mode_enabled,
+                    'multiplier' => (float) $setting->weather_multiplier,
+                ],
+                'night' => [
+                    'multiplier' => (float) $setting->night_multiplier,
+                    'start_time' => substr((string) $setting->night_start_time, 0, 5),
+                    'end_time' => substr((string) $setting->night_end_time, 0, 5),
+                ],
             ];
         });
+
         $base = (float) ($pricing['base_fare'] ?? 500);
         $perKm = (float) ($pricing['per_km'] ?? 250);
-        $perMin = (float) ($pricing['per_min'] ?? 50);
-        $price = $base + ($perKm * $km) + ($perMin * $min);
+        $price = $base + ($perKm * $km);
 
         // Multiplicateur VIP
         if ($vehicleType === 'vip') {
-            $price *= 1.5; // +50% pour le VIP
+            $price *= 1.5;
         }
 
+        // Multiplicateur Heures de Pointe
         $peak = $pricing['peak_hours'] ?? null;
         if (is_array($peak) && !empty($peak['enabled'])) {
-            $multiplier = (float) ($peak['multiplier'] ?? 1.0);
-            $start = $peak['start_time'] ?? '17:00';
-            $end = $peak['end_time'] ?? '20:00';
-            $nowTime = now()->format('H:i');
-
-            if ($start <= $end) {
-                $inRange = $nowTime >= $start && $nowTime <= $end;
-            } else {
-                $inRange = $nowTime >= $start || $nowTime <= $end;
-            }
-
-            if ($inRange && $multiplier > 0) {
-                $price *= $multiplier;
+            if ($this->isCurrentlyInTimeRange($peak['start_time'], $peak['end_time'])) {
+                $price *= (float) ($peak['multiplier'] ?? 1.0);
             }
         }
 
-        $minFare = (float) ($pricing['min_fare'] ?? 500);
+        // Multiplicateur Météo
+        $weather = $pricing['weather'] ?? null;
+        if (is_array($weather) && !empty($weather['enabled'])) {
+            $price *= (float) ($weather['multiplier'] ?? 1.0);
+        }
+
+        // Multiplicateur Nuit
+        $night = $pricing['night'] ?? null;
+        if (is_array($night) && (float) ($night['multiplier'] ?? 1.0) > 1.0) {
+            if ($this->isCurrentlyInTimeRange($night['start_time'], $night['end_time'])) {
+                $price *= (float) $night['multiplier'];
+            }
+        }
+
+        $minFare = (float) ($pricing['min_fare'] ?? 1000);
         $price = max($minFare, (int) round($price, 0));
 
         return response()->json([
@@ -458,53 +477,105 @@ class TripsController extends Controller
         }
 
         return DB::transaction(function () use ($ride, $driver) {
-            $fare = (int) $ride->fare_amount;
+            // Handle active stop if not ended
+            if ($ride->stop_started_at) {
+                $duration = now()->diffInSeconds($ride->stop_started_at);
+                $ride->total_stop_duration_s += $duration;
+                $ride->stop_started_at = null;
+            }
 
-            // Get commission rates from settings (defaults: 70% platform, 20% driver, 10% maintenance)
-            $setting = Cache::remember('pricing.commission', 60, function () {
+            // Get pricing settings
+            $pricing = Cache::remember('pricing.config', 60, function () {
                 $s = PricingSetting::query()->first();
                 return [
-                    'platform_pct' => $s?->platform_commission_pct ?? 70,
-                    'driver_pct' => $s?->driver_commission_pct ?? 20,
-                    'maintenance_pct' => $s?->maintenance_commission_pct ?? 10,
+                    'base_fare' => (int) ($s?->base_fare ?? 500),
+                    'per_km' => (int) ($s?->per_km ?? 250),
+                    'min_fare' => (int) ($s?->min_fare ?? 1000),
+                    'platform_pct' => (int) ($s?->platform_commission_pct ?? 70),
+                    'driver_pct' => (int) ($s?->driver_commission_pct ?? 20),
+                    'maintenance_pct' => (int) ($s?->maintenance_commission_pct ?? 10),
+                    'stop_rate_per_min' => (int) ($s?->stop_rate_per_min ?? 5),
+                    'weather' => [
+                        'enabled' => (bool) ($s?->weather_mode_enabled ?? false),
+                        'multiplier' => (float) ($s?->weather_multiplier ?? 1.0),
+                    ],
+                    'night' => [
+                        'multiplier' => (float) ($s?->night_multiplier ?? 1.0),
+                        'start_time' => substr((string) ($s?->night_start_time ?? '22:00'), 0, 5),
+                        'end_time' => substr((string) ($s?->night_end_time ?? '06:00'), 0, 5),
+                    ],
+                    'peak_hours' => [
+                        'enabled' => (bool) ($s?->peak_hours_enabled ?? false),
+                        'multiplier' => (float) ($s?->peak_hours_multiplier ?? 1.0),
+                        'start_time' => substr((string) ($s?->peak_hours_start_time ?? '17:00'), 0, 5),
+                        'end_time' => substr((string) ($s?->peak_hours_end_time ?? '20:00'), 0, 5),
+                    ],
                 ];
             });
 
-            $platformPct = (int) $setting['platform_pct'];
-            $driverPct = (int) $setting['driver_pct'];
-            $maintenancePct = (int) $setting['maintenance_pct'];
+            // 1. Calculate trajectory price (Base + Distance)
+            $distanceKm = ($ride->distance_m ?? 0) / 1000.0;
+            $trajectoryPrice = $pricing['base_fare'] + ($distanceKm * $pricing['per_km']);
 
-            // Calculate amounts based on percentages
+            // Apply multipliers to trajectory only
+            if ($ride->vehicle_type === 'vip') {
+                $trajectoryPrice *= 1.5;
+            }
+
+            if ($pricing['peak_hours']['enabled'] && $this->isCurrentlyInTimeRange($pricing['peak_hours']['start_time'], $pricing['peak_hours']['end_time'])) {
+                $trajectoryPrice *= $pricing['peak_hours']['multiplier'];
+            }
+
+            if ($pricing['weather']['enabled']) {
+                $trajectoryPrice *= $pricing['weather']['multiplier'];
+            }
+
+            if ($pricing['night']['multiplier'] > 1.0 && $this->isCurrentlyInTimeRange($pricing['night']['start_time'], $pricing['night']['end_time'])) {
+                $trajectoryPrice *= $pricing['night']['multiplier'];
+            }
+
+            // Ensure trajectory meets minimum fare
+            $trajectoryPrice = max($pricing['min_fare'], (int) round($trajectoryPrice));
+
+            // 2. Calculate stop price
+            $stopMinutes = floor($ride->total_stop_duration_s / 60.0);
+            $stopPrice = (int) ($stopMinutes * $pricing['stop_rate_per_min']);
+
+            // Final fare
+            $fare = $trajectoryPrice + $stopPrice;
+            $ride->fare_amount = $fare;
+
+            // 3. Calculate Commissions
+            $platformPct = $pricing['platform_pct'];
+            $driverPct = $pricing['driver_pct'];
+            $maintenancePct = $pricing['maintenance_pct'];
+
             $platformAmount = (int) round($fare * ($platformPct / 100));
             $driverAmount = (int) round($fare * ($driverPct / 100));
             $maintenanceAmount = (int) round($fare * ($maintenancePct / 100));
 
-            // Ensure total equals fare (adjust platform amount for rounding)
-            $total = $platformAmount + $driverAmount + $maintenanceAmount;
-            if ($total !== $fare) {
-                $platformAmount += ($fare - $total);
+            $totalComm = $platformAmount + $driverAmount + $maintenanceAmount;
+            if ($totalComm !== $fare) {
+                $platformAmount += ($fare - $totalComm);
             }
 
-            // Store commission_amount as platform + maintenance (total retained by app)
             $ride->commission_amount = $platformAmount + $maintenanceAmount;
             $ride->driver_earnings_amount = $driverAmount;
             $ride->status = 'completed';
             $ride->completed_at = now();
             $ride->save();
 
-            // Créditer le portefeuille du chauffeur
-            $walletController = new WalletController();
+            // Credit driver wallet
             $wallet = DB::table('wallets')->where('user_id', $driver->id)->first();
-
             if (!$wallet) {
-                DB::table('wallets')->insert([
+                $walletId = DB::table('wallets')->insertGetId([
                     'user_id' => $driver->id,
                     'balance' => 0,
                     'currency' => $ride->currency ?? 'XOF',
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
-                $wallet = DB::table('wallets')->where('user_id', $driver->id)->first();
+                $wallet = (object) ['id' => $walletId, 'balance' => 0];
             }
 
             $before = (int) $wallet->balance;
@@ -544,6 +615,7 @@ class TripsController extends Controller
         if (!in_array($ride->status, ['accepted', 'ongoing', 'requested'])) {
             return response()->json(['message' => 'Invalid state'], 422);
         }
+
         $data = $request->validate([
             'reason' => ['nullable', 'string', 'max:120'],
         ]);
@@ -556,6 +628,7 @@ class TripsController extends Controller
 
         return response()->json(['ok' => true, 'ride_id' => $ride->id, 'status' => $ride->status]);
     }
+
 
     public function cancelByPassenger(Request $request, int $id)
     {
@@ -1220,5 +1293,66 @@ class TripsController extends Controller
                 'type' => $profile->vehicle_type,
             ],
         ]);
+    }
+
+    /**
+     * Start a stop/wait period (Driver action)
+     */
+    public function startStop(Request $request, int $id)
+    {
+        /** @var User|null $driver */
+        $driver = Auth::user();
+        $ride = Ride::findOrFail($id);
+
+        if ($ride->driver_id !== ($driver?->id) || $ride->status !== 'ongoing') {
+            return response()->json(['message' => 'Invalid state'], 422);
+        }
+
+        if ($ride->stop_started_at) {
+            return response()->json(['message' => 'Stop already started'], 422);
+        }
+
+        $ride->stop_started_at = now();
+        $ride->save();
+
+        broadcast(new RideStopUpdated($ride));
+
+        return response()->json(['ok' => true, 'stop_started_at' => $ride->stop_started_at]);
+    }
+
+    /**
+     * End a stop/wait period (Driver action)
+     */
+    public function endStop(Request $request, int $id)
+    {
+        /** @var User|null $driver */
+        $driver = Auth::user();
+        $ride = Ride::findOrFail($id);
+
+        if ($ride->driver_id !== ($driver?->id) || $ride->status !== 'ongoing' || !$ride->stop_started_at) {
+            return response()->json(['message' => 'Invalid state'], 422);
+        }
+
+        $duration = now()->diffInSeconds($ride->stop_started_at);
+        $ride->total_stop_duration_s += $duration;
+        $ride->stop_started_at = null;
+        $ride->save();
+
+        broadcast(new RideStopUpdated($ride));
+
+        return response()->json(['ok' => true, 'total_stop_duration_s' => $ride->total_stop_duration_s]);
+    }
+
+    /**
+     * Check if current time is within a range (handles overnight ranges)
+     */
+    protected function isCurrentlyInTimeRange(string $start, string $end): bool
+    {
+        $nowTime = now()->format('H:i');
+        if ($start <= $end) {
+            return $nowTime >= $start && $nowTime <= $end;
+        } else {
+            return $nowTime >= $start || $nowTime <= $end;
+        }
     }
 }

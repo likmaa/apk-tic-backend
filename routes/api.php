@@ -6,7 +6,7 @@ use App\Http\Controllers\Auth\OtpController;
 use App\Http\Controllers\TripsController;
 
 // Health check endpoint (public)
-Route::get('/health', fn () => response()->json(['status' => 'ok', 'timestamp' => now()]));
+Route::get('/health', fn() => response()->json(['status' => 'ok', 'timestamp' => now()]));
 
 Route::prefix('auth')->group(function () {
     Route::post('/request-otp', [OtpController::class, 'requestOtp'])->middleware('throttle:otp');
@@ -46,7 +46,7 @@ Route::prefix('admin')->group(function () {
         Route::post('/logout', [AdminAuthController::class, 'logout']);
         Route::get('/me', [AdminAuthController::class, 'me']);
         // Health check
-        Route::get('/ping', fn () => response()->json(['ok' => true, 'area' => 'admin']));
+        Route::get('/ping', fn() => response()->json(['ok' => true, 'area' => 'admin']));
         Route::get('/drivers/{id}/profile', [DriverModerationController::class, 'showProfile']);
 
         // Driver moderation
@@ -123,7 +123,7 @@ Route::middleware(['auth:sanctum'])->prefix('driver')->group(function () {
 });
 
 Route::middleware(['auth:sanctum', 'role:driver', 'driver.approved'])->prefix('driver')->group(function () {
-    Route::get('/ping', fn () => response()->json(['ok' => true, 'area' => 'driver']));
+    Route::get('/ping', fn() => response()->json(['ok' => true, 'area' => 'driver']));
     Route::post('/location', [TripsController::class, 'updateDriverLocation']);
     Route::get('/rides', [TripsController::class, 'driverRides']);
     Route::get('/rides/{id}', [TripsController::class, 'driverRideShow']);
@@ -139,10 +139,12 @@ Route::middleware(['auth:sanctum', 'role:driver', 'driver.approved'])->prefix('d
     Route::post('/trips/{id}/start', [TripsController::class, 'start']);
     Route::post('/trips/{id}/complete', [TripsController::class, 'complete']);
     Route::post('/trips/{id}/cancel', [TripsController::class, 'cancelByDriver']);
+    Route::post('/trips/{id}/start-stop', [TripsController::class, 'startStop']);
+    Route::post('/trips/{id}/end-stop', [TripsController::class, 'endStop']);
 });
 
 Route::middleware(['auth:sanctum', 'role:passenger'])->prefix('passenger')->group(function () {
-    Route::get('/ping', fn () => response()->json(['ok' => true, 'area' => 'passenger']));
+    Route::get('/ping', fn() => response()->json(['ok' => true, 'area' => 'passenger']));
     Route::get('/rides', [TripsController::class, 'passengerRides']);
     Route::get('/rides/current', [TripsController::class, 'currentPassengerRide']);
     Route::get('/rides/active-count', [TripsController::class, 'activeRidesCount']);
