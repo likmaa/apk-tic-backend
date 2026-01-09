@@ -95,6 +95,10 @@ Route::prefix('admin')->group(function () {
         Route::get('/stats/drivers/daily/top', [StatsController::class, 'topDriversDaily']);
         Route::get('/stats/overview', [StatsController::class, 'overview']);
 
+        // Metrics & Analytics
+        Route::get('/metrics', [\App\Http\Controllers\Admin\MetricsController::class, 'index']);
+        Route::get('/analytics/reconnections', [\App\Http\Controllers\Admin\AnalyticsController::class, 'reconnections']);
+
         // Settings
         Route::get('/settings', [\App\Http\Controllers\Admin\SettingsController::class, 'index']);
         Route::post('/settings', [\App\Http\Controllers\Admin\SettingsController::class, 'update']);
@@ -166,6 +170,11 @@ Route::middleware(['auth:sanctum'])->prefix('trips')->group(function () {
     Route::post('/estimate', [TripsController::class, 'estimate']);
     Route::post('/create', [TripsController::class, 'create']);
     Route::post('/request', [TripsController::class, 'requestTicRide']);
+});
+
+// Analytics endpoint pour les apps mobiles
+Route::middleware(['auth:sanctum'])->prefix('analytics')->group(function () {
+    Route::post('/reconnection', [\App\Http\Controllers\Admin\AnalyticsController::class, 'trackReconnection']);
 });
 
 // Public geocoding proxy (throttled)
