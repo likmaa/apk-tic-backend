@@ -32,10 +32,8 @@ class MonerooWebhookController extends Controller
         // Note: Moneroo might send hex or base64. Let's assume hex matching usual standards.
         // If comparison fails, return 401.
         if (!hash_equals($computed, $signature)) {
-            // Relaxed check for development if needed, but strictly:
             Log::error("Moneroo Webhook: Invalid signature. Got $signature, expected $computed");
-            // return response()->json(['message' => 'Invalid signature'], 401); 
-            // Commented out return to allow testing if signature format varies, but in PROD must be uncommented.
+            return response()->json(['message' => 'Invalid signature'], 401);
         }
 
         $event = $request->input('event'); // e.g., 'payment.success'
