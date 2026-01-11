@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use App\Models\Ride;
 use App\Models\Rating;
 use App\Models\DriverReward;
+use App\Events\RideRated;
 
 class RatingsController extends Controller
 {
@@ -15,10 +16,10 @@ class RatingsController extends Controller
     {
         $user = Auth::user();
         $data = $request->validate([
-            'ride_id' => ['required','integer','min:1'],
-            'stars' => ['required','integer','min:1','max:5'],
-            'comment' => ['nullable','string','max:500'],
-            'tip_amount' => ['nullable','integer','min:0'],
+            'ride_id' => ['required', 'integer', 'min:1'],
+            'stars' => ['required', 'integer', 'min:1', 'max:5'],
+            'comment' => ['nullable', 'string', 'max:500'],
+            'tip_amount' => ['nullable', 'integer', 'min:0'],
         ]);
 
         $ride = Ride::findOrFail($data['ride_id']);
@@ -98,6 +99,9 @@ class RatingsController extends Controller
                     ]);
                 }
             }
+
+            // Broadcast that the ride was rated (includes tip)
+            broadcast(new RideRated($ride, (int) $data['stars']));
         });
 
         return response()->json([

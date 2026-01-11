@@ -14,12 +14,11 @@ class KyaSmsService
 
     public function __construct()
     {
-        // Utiliser les variables d'environnement si disponibles, sinon les valeurs par défaut
-        $this->apiKey = env('KYASMS_API_KEY', 'kyasms661efc85b7b3c8f0d90cd7f21097e731e05b029cedcf265319b853dd67');
+        $this->apiKey = env('KYASMS_API_KEY', '');
         $this->baseUrl = env('KYASMS_BASE_URL', 'https://route.kyasms.com/api/v3');
-        $this->appId = env('KYASMS_APP_ID', '9DILGC5Y');
-        $this->from = env('KYASMS_FROM', 'TICMITON');
-        
+        $this->appId = env('KYASMS_APP_ID', '');
+        $this->from = env('KYASMS_FROM', '');
+
         // Log de la configuration (sans exposer la clé complète)
         Log::info('KYA SMS Service initialized', [
             'base_url' => $this->baseUrl,
@@ -72,19 +71,19 @@ class KyaSmsService
         // Si $forceNew est true, on supprime l'ancien cache et on envoie un nouveau code.
         $cacheKey = 'kya_otp_key_' . $phone;
         $existingKey = cache()->get($cacheKey);
-        
+
         if ($existingKey && !$forceNew) {
             Log::info('KYA SMS OTP already exists for phone, skipping create', [
                 'phone' => $phone,
-                'key'   => $existingKey,
+                'key' => $existingKey,
             ]);
 
             return [
                 'reason' => 'already_exists',
-                'key'    => $existingKey,
+                'key' => $existingKey,
             ];
         }
-        
+
         // Si on force un nouveau code, supprimer l'ancien cache
         if ($forceNew && $existingKey) {
             Log::info('KYA SMS OTP force new code, clearing old cache', [
@@ -96,9 +95,9 @@ class KyaSmsService
 
         // Payload conforme à la doc KYA OTP: /otp/create
         $payload = [
-            'appId'    => $this->appId,      // ton app OTP KYA
-            'recipient'=> ltrim($phone, '+'), // ex: 22966223344 (selon doc)
-            'lang'     => 'fr',
+            'appId' => $this->appId,      // ton app OTP KYA
+            'recipient' => ltrim($phone, '+'), // ex: 22966223344 (selon doc)
+            'lang' => 'fr',
         ];
 
         Log::info('KYA SMS OTP send payload', $payload);
@@ -115,7 +114,7 @@ class KyaSmsService
 
             Log::info('KYA SMS OTP send response', [
                 'status' => $response->status(),
-                'body'   => $response->body(),
+                'body' => $response->body(),
                 'headers' => $response->headers(),
             ]);
 
@@ -158,8 +157,8 @@ class KyaSmsService
         // Payload conforme à la doc KYA OTP: /otp/verify
         $payload = [
             'appId' => $this->appId,
-            'key'   => $otpKey,
-            'code'  => $code,
+            'key' => $otpKey,
+            'code' => $code,
         ];
 
         Log::info('KYA SMS OTP verify payload', $payload);
@@ -171,7 +170,7 @@ class KyaSmsService
 
         Log::info('KYA SMS OTP verify response', [
             'status' => $response->status(),
-            'body'   => $response->body(),
+            'body' => $response->body(),
         ]);
 
         if (!$response->ok()) {

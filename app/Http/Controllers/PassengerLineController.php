@@ -16,17 +16,19 @@ class PassengerLineController extends Controller
 
     public function lines()
     {
-        return Line::with(['stops' => function ($q) {
-            $q->orderBy('pivot_position');
-        }])->get();
+        return Line::with([
+            'stops' => function ($q) {
+                $q->orderBy('pivot_position');
+            }
+        ])->get();
     }
 
     public function estimate(Request $request)
     {
         $data = $request->validate([
-            'line_id'      => ['required', 'integer', 'exists:lines,id'],
+            'line_id' => ['required', 'integer', 'exists:lines,id'],
             'from_stop_id' => ['required', 'integer', 'exists:stops,id'],
-            'to_stop_id'   => ['required', 'integer', 'exists:stops,id'],
+            'to_stop_id' => ['required', 'integer', 'exists:stops,id'],
         ]);
 
         $lineStops = LineStop::where('line_id', $data['line_id'])
@@ -34,7 +36,7 @@ class PassengerLineController extends Controller
             ->get(['stop_id', 'position']);
 
         $iFrom = optional($lineStops->firstWhere('stop_id', $data['from_stop_id']))->position;
-        $iTo   = optional($lineStops->firstWhere('stop_id', $data['to_stop_id']))->position;
+        $iTo = optional($lineStops->firstWhere('stop_id', $data['to_stop_id']))->position;
 
         if ($iFrom === null || $iTo === null) {
             return response()->json([
@@ -43,16 +45,16 @@ class PassengerLineController extends Controller
         }
 
         $segments = abs($iTo - $iFrom);
-        $unit     = 200; // FCFA par segment
-        $price    = $unit * $segments;
+        $unit = \App\Models\Setting::where('key', 'tic_line_unit_price')->value('value') ?? 200;
+        $price = $unit * $segments;
 
         return response()->json([
-            'line_id'      => (int) $data['line_id'],
+            'line_id' => (int) $data['line_id'],
             'from_stop_id' => (int) $data['from_stop_id'],
-            'to_stop_id'   => (int) $data['to_stop_id'],
-            'segments'     => $segments,
-            'unit_price'   => $unit,
-            'price'        => $price,
+            'to_stop_id' => (int) $data['to_stop_id'],
+            'segments' => $segments,
+            'unit_price' => $unit,
+            'price' => $price,
         ]);
     }
 }

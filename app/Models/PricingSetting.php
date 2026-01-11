@@ -30,6 +30,8 @@ class PricingSetting extends Model
         'night_start_time',
         'night_end_time',
         'stop_rate_per_min',
+        'pickup_grace_period_m',
+        'pickup_waiting_rate_per_min',
     ];
 
     protected $casts = [
@@ -43,6 +45,8 @@ class PricingSetting extends Model
         'weather_mode_enabled' => 'boolean',
         'night_multiplier' => 'float',
         'stop_rate_per_min' => 'integer',
+        'pickup_grace_period_m' => 'integer',
+        'pickup_waiting_rate_per_min' => 'integer',
     ];
 }
 

@@ -24,10 +24,10 @@ class GeocodingController extends Controller
         $query = $validated['query'];
         $language = $validated['language'] ?? 'fr';
         $limit = $validated['limit'] ?? 8;
-        $lat = $request->lat ? round((float)$request->lat, 2) : null;
-        $lon = $request->lon ? round((float)$request->lon, 2) : null;
+        $lat = $request->lat ? round((float) $request->lat, 2) : null;
+        $lon = $request->lon ? round((float) $request->lon, 2) : null;
 
-        $cacheKey = "geocode:search:" . md5($language.'|'.$query.'|'.$limit.'|'.$lat.'|'.$lon);
+        $cacheKey = "geocode:search:" . md5($language . '|' . $query . '|' . $limit . '|' . $lat . '|' . $lon);
         $started = microtime(true);
         $ip = $request->ip();
         $uid = optional($request->user())->id;
@@ -36,8 +36,8 @@ class GeocodingController extends Controller
         Log::info("Geocoding search request", ['query' => $request->query('query'), 'lat' => $request->lat, 'lon' => $request->lon]);
 
         $results = Cache::remember($cacheKey, 3600, function () use ($query, $language, $limit, $request) {
-            $mapboxToken = env('MAPBOX_ACCESS_TOKEN', 'pk.eyJ1Ijoibm91dmVhdTU4IiwiYSI6ImNtaHpkMHp3NzBmNDEyanNmc2RyMmduNG8ifQ.cpF-VCHXqMq9wX8l8HIpbw');
-            
+            $mapboxToken = env('MAPBOX_TOKEN');
+
             // On demande plus de résultats en interne (20 au lieu de 8) pour avoir plus de choix lors du tri par distance
             $internalLimit = 20;
 
@@ -65,13 +65,13 @@ class GeocodingController extends Controller
                 'countrycodes' => 'bj',
             ];
 
-            $responses = Http::pool(fn ($pool) => [
+            $responses = Http::pool(fn($pool) => [
                 $pool->as('mapbox')->timeout(4)->get($mapboxUrl, $mapboxParams),
                 $pool->as('nominatim')->timeout(4)->withHeaders(['User-Agent' => 'PortoBackend/1.0'])->get($nominatimUrl, $nominatimParams),
             ]);
 
             $combined = [];
-            
+
             // Traitement Mapbox
             if ($responses['mapbox']->ok()) {
                 foreach ($responses['mapbox']->json()['features'] ?? [] as $f) {
@@ -87,8 +87,8 @@ class GeocodingController extends Controller
                     $combined[] = [
                         'place_id' => 'mb_' . ($f['id'] ?? ''),
                         'display_name' => $neighborhood ? "$name ($neighborhood)" : $name,
-                        'lat' => (string)($f['center'][1] ?? ''),
-                        'lon' => (string)($f['center'][0] ?? ''),
+                        'lat' => (string) ($f['center'][1] ?? ''),
+                        'lon' => (string) ($f['center'][0] ?? ''),
                         'source' => 'mapbox'
                     ];
                 }
@@ -100,14 +100,14 @@ class GeocodingController extends Controller
                     $addr = $f['address'] ?? [];
                     $neighborhood = $addr['neighbourhood'] ?? ($addr['suburb'] ?? ($addr['quarter'] ?? null));
                     $name = $f['name'] ?? ($f['display_name'] ?? '');
-                    
+
                     $shortName = current(explode(',', $name));
 
                     $combined[] = [
                         'place_id' => 'nom_' . ($f['place_id'] ?? ''),
                         'display_name' => $neighborhood ? "$shortName ($neighborhood)" : $shortName,
-                        'lat' => (string)($f['lat'] ?? ''),
-                        'lon' => (string)($f['lon'] ?? ''),
+                        'lat' => (string) ($f['lat'] ?? ''),
+                        'lon' => (string) ($f['lon'] ?? ''),
                         'source' => 'nominatim'
                     ];
                 }
@@ -120,12 +120,12 @@ class GeocodingController extends Controller
 
             foreach ($combined as $item) {
                 $slug = Str::slug($item['display_name']);
-                
+
                 // On privilégie les POIs (Points d'Intérêt) par rapport aux adresses génériques
                 $item['distance'] = null;
                 if ($userLat && $userLon && $item['lat'] && $item['lon']) {
                     // Haversine simple
-                    $item['distance'] = sqrt(pow((float)$item['lat'] - (float)$userLat, 2) + pow((float)$item['lon'] - (float)$userLon, 2));
+                    $item['distance'] = sqrt(pow((float) $item['lat'] - (float) $userLat, 2) + pow((float) $item['lon'] - (float) $userLon, 2));
                 }
 
                 if (!isset($seen[$slug])) {
@@ -135,10 +135,13 @@ class GeocodingController extends Controller
             }
 
             if ($userLat && $userLon) {
-                usort($unique, function($a, $b) {
-                    if ($a['distance'] === $b['distance']) return 0;
-                    if ($a['distance'] === null) return 1;
-                    if ($b['distance'] === null) return -1;
+                usort($unique, function ($a, $b) {
+                    if ($a['distance'] === $b['distance'])
+                        return 0;
+                    if ($a['distance'] === null)
+                        return 1;
+                    if ($b['distance'] === null)
+                        return -1;
                     return ($a['distance'] < $b['distance']) ? -1 : 1;
                 });
             }
@@ -161,7 +164,8 @@ class GeocodingController extends Controller
                 'result_count' => count($results['items'] ?? []),
                 'created_at' => now(),
             ]);
-        } catch (\Throwable $e) {}
+        } catch (\Throwable $e) {
+        }
 
         return response()->json([
             'results' => $results['items'] ?? [],
@@ -179,15 +183,15 @@ class GeocodingController extends Controller
         $lon = (float) $validated['lon'];
         $language = $validated['language'] ?? 'fr';
 
-        $cacheKey = "geocode:reverse:" . md5($language.'|'.$lat.'|'.$lon);
+        $cacheKey = "geocode:reverse:" . md5($language . '|' . $lat . '|' . $lon);
         $started = microtime(true);
         $ip = $request->ip();
         $uid = optional($request->user())->id;
 
         $data = Cache::remember($cacheKey, 3600, function () use ($lat, $lon, $language) {
-            $token = env('MAPBOX_ACCESS_TOKEN', 'pk.eyJ1Ijoibm91dmVhdTU4IiwiYSI6ImNtaHpkMHp3NzBmNDEyanNmc2RyMmduNG8ifQ.cpF-VCHXqMq9wX8l8HIpbw');
+            $token = env('MAPBOX_TOKEN');
             $url = "https://api.mapbox.com/geocoding/v5/mapbox.places/{$lon},{$lat}.json";
-            
+
             $resp = Http::timeout(6)->get($url, [
                 'access_token' => $token,
                 'language' => $language,
@@ -195,16 +199,18 @@ class GeocodingController extends Controller
                 'types' => 'address,poi,neighborhood,locality'
             ]);
 
-            if (!$resp->ok()) return ['address' => null, 'label' => null, 'status' => $resp->status()];
-            
+            if (!$resp->ok())
+                return ['address' => null, 'label' => null, 'status' => $resp->status()];
+
             $json = $resp->json();
             $feature = $json['features'][0] ?? null;
-            
-            if (!$feature) return ['address' => null, 'label' => null, 'status' => $resp->status()];
+
+            if (!$feature)
+                return ['address' => null, 'label' => null, 'status' => $resp->status()];
 
             $addr = $feature['place_name'] ?? null;
             $name = $feature['text'] ?? null;
-            
+
             // Extraction du quartier
             $context = $feature['context'] ?? [];
             $neighborhood = null;
@@ -242,7 +248,8 @@ class GeocodingController extends Controller
                 'result_count' => isset($data['address']) && $data['address'] ? 1 : 0,
                 'created_at' => now(),
             ]);
-        } catch (\Throwable $e) {}
+        } catch (\Throwable $e) {
+        }
 
         return response()->json([
             'address' => $data['address'] ?? null,

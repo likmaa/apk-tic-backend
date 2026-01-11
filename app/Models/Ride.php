@@ -37,9 +37,17 @@ class Ride extends Model
         'cancelled_at',
         'cancellation_reason',
         'vehicle_type',
-        'has_baggage',
         'total_stop_duration_s',
         'stop_started_at',
+        'arrived_at',
+        'tip_amount',
+        'payment_method',
+        'service_type',
+        'recipient_name',
+        'recipient_phone',
+        'package_description',
+        'package_weight',
+        'is_fragile',
     ];
 
     protected $casts = [
@@ -48,6 +56,7 @@ class Ride extends Model
         'completed_at' => 'datetime',
         'cancelled_at' => 'datetime',
         'stop_started_at' => 'datetime',
+        'arrived_at' => 'datetime',
         'declined_driver_ids' => 'array',
         'has_baggage' => 'boolean',
     ];
@@ -60,5 +69,10 @@ class Ride extends Model
     public function rider()
     {
         return $this->belongsTo(User::class, 'rider_id');
+    }
+
+    public function rating()
+    {
+        return $this->hasOne(Rating::class, 'ride_id');
     }
 }

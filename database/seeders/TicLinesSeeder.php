@@ -14,35 +14,35 @@ class TicLinesSeeder extends Seeder
         // 1) Créer / mettre à jour les STOPS (points TIC)
 
         $stops = [
-            'FIN_PAVE_AGBOKOU'      => 'Fin pavé Agbokou',
-            'ECOLE_NORMALE_SUP'     => 'Ecole Normale Supérieure',
-            'PLACE_BAYOLE'          => 'Place Bayole',
-            'OUANDO'                => 'Ouando',
-            'OUANDO_PISCINE'        => 'Ouando (Piscine municipale)',
-            'BEAU_RIVAGE'           => 'Beau Rivage (Carrefour)',
-            'OUANDO_MARCHE'         => 'Ouando (Marché)',
-            'AGATA_MARCHE'          => 'Agata (Marché)',
-            'AGATA_CARREFOUR'       => 'Agata (Carrefour)',
-            'ADJARA_MARCHE'         => 'Adjara (Marché)',
-            'AVAKPA'                => 'Avakpa',
-            'MISSERETE_CARREFOUR'   => 'Misserete (Carrefour)',
-            'AWANA_CARREFOUR'       => 'Awana (Carrefour)',
-            'GRAND_MARCHE'          => 'Grand Marché',
-            'BABA_IYABO_CARREFOUR'  => 'Baba Iyabo (Carrefour)',
-            'AHOUANGBO_MARCHE'      => 'Ahouangbo (Marché)',
-            'AGBOKOU'               => 'Agbokou',
+            'FIN_PAVE_AGBOKOU' => ['name' => 'Fin pavé Agbokou', 'lat' => 6.4900, 'lng' => 2.6240],
+            'ECOLE_NORMALE_SUP' => ['name' => 'Ecole Normale Supérieure', 'lat' => 6.4833, 'lng' => 2.6167],
+            'PLACE_BAYOLE' => ['name' => 'Place Bayole', 'lat' => 6.4778, 'lng' => 2.6240],
+            'OUANDO' => ['name' => 'Ouando', 'lat' => 6.5109, 'lng' => 2.6120],
+            'OUANDO_PISCINE' => ['name' => 'Ouando (Piscine municipale)', 'lat' => 6.5120, 'lng' => 2.6130],
+            'BEAU_RIVAGE' => ['name' => 'Beau Rivage (Carrefour)', 'lat' => 6.5150, 'lng' => 2.6100],
+            'OUANDO_MARCHE' => ['name' => 'Ouando (Marché)', 'lat' => 6.5105, 'lng' => 2.6125],
+            'AGATA_MARCHE' => ['name' => 'Agata (Marché)', 'lat' => 6.4930, 'lng' => 2.6350],
+            'AGATA_CARREFOUR' => ['name' => 'Agata (Carrefour)', 'lat' => 6.4940, 'lng' => 2.6360],
+            'ADJARA_MARCHE' => ['name' => 'Adjara (Marché)', 'lat' => 6.4914, 'lng' => 2.6810],
+            'AVAKPA' => ['name' => 'Avakpa', 'lat' => 6.4805, 'lng' => 2.6075],
+            'MISSERETE_CARREFOUR' => ['name' => 'Misserete (Carrefour)', 'lat' => 6.5333, 'lng' => 2.5870],
+            'AWANA_CARREFOUR' => ['name' => 'Awana (Carrefour)', 'lat' => 6.5150, 'lng' => 2.6400],
+            'GRAND_MARCHE' => ['name' => 'Grand Marché', 'lat' => 6.4775, 'lng' => 2.6263],
+            'BABA_IYABO_CARREFOUR' => ['name' => 'Baba Iyabo (Carrefour)', 'lat' => 6.5050, 'lng' => 2.6050],
+            'AHOUANGBO_MARCHE' => ['name' => 'Ahouangbo (Marché)', 'lat' => 6.4850, 'lng' => 2.6200],
+            'AGBOKOU' => ['name' => 'Agbokou', 'lat' => 6.4880, 'lng' => 2.6220],
         ];
 
-        $stopIds = []; // code => id
+        $stopIds = [];
 
-        foreach ($stops as $code => $name) {
+        foreach ($stops as $code => $info) {
             $stop = Stop::updateOrCreate(
                 ['code' => $code],
                 [
-                    'name' => $name,
+                    'name' => $info['name'],
                     'type' => 'both',
-                    'lat'  => null,
-                    'lng'  => null,
+                    'lat' => $info['lat'],
+                    'lng' => $info['lng'],
                 ]
             );
 
@@ -61,13 +61,13 @@ class TicLinesSeeder extends Seeder
             LineStop::where('line_id', $line->id)->delete();
 
             foreach ($stopCodes as $index => $stopCode) {
-                if (! isset($stopIds[$stopCode])) {
+                if (!isset($stopIds[$stopCode])) {
                     continue;
                 }
 
                 LineStop::create([
-                    'line_id'  => $line->id,
-                    'stop_id'  => $stopIds[$stopCode],
+                    'line_id' => $line->id,
+                    'stop_id' => $stopIds[$stopCode],
                     'position' => $index,
                 ]);
             }

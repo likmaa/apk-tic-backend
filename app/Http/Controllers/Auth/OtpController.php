@@ -31,6 +31,7 @@ class OtpController extends Controller
         $phone = Phone::normalize($data['phone']); // ex: +229XXXXXXXX
         $forceNew = $data['force_new'] ?? false;
 
+
         try {
             // Pour l'application driver, on force TOUJOURS l'envoi d'OTP
             // même si le numéro est déjà vérifié, pour garantir le flux OTP complet
@@ -60,9 +61,9 @@ class OtpController extends Controller
     {
         $data = $request->validate([
             'phone' => 'required|string',
-            'code'   => 'required|digits:6',
+            'code' => 'required|digits:6',
             'otp_key' => 'required|string',
-            'role'   => 'sometimes|string|in:passenger,driver',
+            'role' => 'sometimes|string|in:passenger,driver',
         ]);
 
         $phone = Phone::normalize($data['phone']);
@@ -102,11 +103,11 @@ class OtpController extends Controller
         if (!$user) {
             $isNewUser = true;
             $user = User::create([
-                'name'     => $phone,
-                'email'    => $phone . '@example.local',
+                'name' => $phone,
+                'email' => $phone . '@example.local',
                 'password' => Hash::make(bin2hex(random_bytes(8))),
-                'phone'    => $phone,
-                'role'     => $requestedRole,
+                'phone' => $phone,
+                'role' => $requestedRole,
                 'is_active' => true,
                 'phone_verified_at' => now(),
             ]);
@@ -133,7 +134,7 @@ class OtpController extends Controller
         // Si role='driver' est demandé, créer un profil driver avec status='pending'
         if ($requestedRole === 'driver') {
             $profileExists = DB::table('driver_profiles')->where('user_id', $user->id)->exists();
-            
+
             if (!$profileExists) {
                 // Créer un profil driver avec status='pending'
                 DB::table('driver_profiles')->insert([
@@ -158,12 +159,12 @@ class OtpController extends Controller
             'status' => 'success',
             'message' => 'OTP validé.',
             'token' => $token,
-            'user'  => [
+            'user' => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
                 'phone' => $user->phone,
-                'role'  => $user->role,
+                'role' => $user->role,
                 'photo' => $user->photo,
             ],
         ]);
@@ -188,10 +189,10 @@ class OtpController extends Controller
         $user = $request->user();
 
         $data = $request->validate([
-            'name'  => ['nullable', 'string', 'max:255'],
+            'name' => ['nullable', 'string', 'max:255'],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:20'],
-            'photo' => ['nullable', 'string', 'max:2048'],
+            'photo' => ['nullable'], // Accepter fichier ou string
         ]);
 
         // Met à jour le nom complet si fourni
@@ -208,7 +209,10 @@ class OtpController extends Controller
             $user->phone = $data['phone'];
         }
 
-        if (array_key_exists('photo', $data) && $data['photo'] !== null && $data['photo'] !== '') {
+        if ($request->hasFile('photo')) {
+            $path = $request->file('photo')->store('profiles', 'public');
+            $user->photo = asset('storage/' . $path);
+        } elseif (array_key_exists('photo', $data) && $data['photo'] !== null && $data['photo'] !== '') {
             $user->photo = $data['photo'];
         }
 
@@ -219,7 +223,7 @@ class OtpController extends Controller
             'name' => $user->name,
             'email' => $user->email,
             'phone' => $user->phone,
-            'role'  => $user->role,
+            'role' => $user->role,
             'photo' => $user->photo,
         ]);
     }

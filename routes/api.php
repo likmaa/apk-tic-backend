@@ -97,7 +97,7 @@ Route::prefix('admin')->group(function () {
 
         // Metrics & Analytics
         Route::get('/metrics', [\App\Http\Controllers\Admin\MetricsController::class, 'index']);
-        Route::get('/analytics/reconnections', [\App\Http\Controllers\Admin\AnalyticsController::class, 'reconnections']);
+        Route::post('/webhooks/moneroo', [\App\Http\Controllers\Api\MonerooWebhookController::class, 'handle']);
 
         // Settings
         Route::get('/settings', [\App\Http\Controllers\Admin\SettingsController::class, 'index']);
@@ -136,6 +136,7 @@ Route::middleware(['auth:sanctum', 'role:driver', 'driver.approved'])->prefix('d
     Route::get('/next-offer', [TripsController::class, 'driverNextOffer']);
     Route::post('/trips/{id}/accept', [TripsController::class, 'accept']);
     Route::post('/trips/{id}/decline', [TripsController::class, 'decline']);
+    Route::post('/trips/{id}/arrived', [TripsController::class, 'arrived']);
     Route::post('/trips/{id}/start', [TripsController::class, 'start']);
     Route::post('/trips/{id}/complete', [TripsController::class, 'complete']);
     Route::post('/trips/{id}/cancel', [TripsController::class, 'cancelByDriver']);
