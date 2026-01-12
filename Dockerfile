@@ -1,8 +1,9 @@
 FROM php:8.2-fpm
 
-# Installer les dépendances système pour Laravel et Nginx
+# Installer les dépendances système pour Laravel, Nginx et Supervisor
 RUN apt-get update && apt-get install -y \
     nginx \
+    supervisor \
     libzip-dev \
     libonig-dev \
     libxml2-dev \
@@ -24,9 +25,14 @@ COPY . .
 # Installer les dépendances Laravel
 RUN composer install --optimize-autoloader --no-dev --no-interaction
 
-# Configuration Nginx et PHP-FPM
+# Configuration Nginx, PHP-FPM et Supervisor
 COPY nginx-internal.conf /etc/nginx/nginx.conf
 COPY php-fpm-prod.conf /usr/local/etc/php-fpm.d/www.conf
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Création des répertoires nécessaires pour les logs et PID
+RUN mkdir -p /var/log/supervisor /var/run /var/log/nginx /var/lib/nginx/body \
+    && chown -R www-data:www-data /var/log/nginx /var/lib/nginx
 
 # Nettoyage Nginx
 RUN rm -rf /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default
@@ -35,14 +41,8 @@ RUN rm -rf /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default
 RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
     && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
 
-# Script de démarrage
-RUN echo '#!/bin/sh' > /start.sh && \
-    echo 'php-fpm -D' >> /start.sh && \
-    echo 'nginx -g "daemon off;"' >> /start.sh && \
-    chmod +x /start.sh
-
 # Exposer le port HTTP
 EXPOSE 80
 
-# Démarrer
-CMD ["/start.sh"]
+# Démarrer via Supervisor
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
