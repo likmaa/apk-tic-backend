@@ -143,7 +143,7 @@ class KyaSmsService
 
         // On stocke la key associée au numéro pour la vérification ultérieure
         // Expiration après 10 minutes (temps de validité du code OTP)
-        cache()->put($cacheKey, $data['key'], now()->addMinutes(10));
+        cache()->put($cacheKey, $data['key'], now()->addMinutes(3));
 
         return $data;
     }
