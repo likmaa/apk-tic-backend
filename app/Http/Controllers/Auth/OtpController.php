@@ -40,9 +40,18 @@ class OtpController extends Controller
             // En production, déléguer complètement l'OTP à Kya SMS
             $providerResponse = $this->kyaSms->sendOtp($phone, $forceNew);
 
+            // Gérer le cas où un OTP existe déjà (pas d'erreur, juste info)
+            $status = ($providerResponse['reason'] ?? '') === 'already_exists'
+                ? 'otp_exists'
+                : 'otp_sent';
+
+            $message = $status === 'otp_exists'
+                ? 'Un code OTP est déjà en cours. Vérifiez vos SMS.'
+                : 'OTP envoyé par SMS via KYA SMS.';
+
             return response()->json([
-                'status' => 'otp_sent',
-                'message' => 'OTP envoyé par SMS via KYA SMS.',
+                'status' => $status,
+                'message' => $message,
                 'provider' => $providerResponse,
                 // On renvoie explicitement la clé OTP au client pour vérification ultérieure
                 'otp_key' => $providerResponse['key'] ?? null,
@@ -50,10 +59,11 @@ class OtpController extends Controller
         } catch (\Throwable $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Erreur lors de l’envoi SMS OTP.',
+                'message' => "Erreur lors de l'envoi SMS OTP.",
                 'debug' => $e->getMessage() // retire en production
             ], 500);
         }
+
     }
 
 
