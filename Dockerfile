@@ -28,18 +28,23 @@ RUN composer install --optimize-autoloader --no-dev --no-interaction
 COPY nginx-internal.conf /etc/nginx/nginx.conf
 COPY php-fpm.conf /usr/local/etc/php-fpm.d/www.conf
 
+# Supprimer la config par défaut de Nginx pour éviter les conflits de port
+RUN rm -rf /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default
+
 # Permissions
 RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
     && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
 
-# Script de démarrage
+# Script de démarrage robuste
 RUN echo '#!/bin/sh' > /start.sh && \
+    echo 'echo "Starting PHP-FPM..."' >> /start.sh && \
     echo 'php-fpm -D' >> /start.sh && \
+    echo 'echo "Starting Nginx..."' >> /start.sh && \
     echo 'nginx -g "daemon off;"' >> /start.sh && \
     chmod +x /start.sh
 
 # Exposer le port HTTP
 EXPOSE 80
 
-# Démarrer Nginx et PHP-FPM
+# Démarrer
 CMD ["/start.sh"]
