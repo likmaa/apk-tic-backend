@@ -181,18 +181,18 @@ Route::middleware(['auth:sanctum'])->prefix('analytics')->group(function () {
 });
 
 // Public geocoding proxy (throttled)
-Route::prefix('geocoding')->middleware('throttle:120,1')->group(function () {
+Route::prefix('geocoding')->middleware('throttle:300,1')->group(function () {
     Route::get('/search', [GeocodingController::class, 'search']);
     Route::get('/reverse', [GeocodingController::class, 'reverse']);
 });
 
 // Public voice search (throttled)
-Route::prefix('voice')->middleware('throttle:30,1')->group(function () {
+Route::prefix('voice')->middleware('throttle:60,1')->group(function () {
     Route::post('/search', [VoiceController::class, 'search']);
 });
 
 // Public routing estimate (throttled)
-Route::prefix('routing')->middleware('throttle:120,1')->group(function () {
+Route::prefix('routing')->middleware('throttle:300,1')->group(function () {
     Route::post('/estimate', [TripsController::class, 'estimateFromCoords']);
 });
 
