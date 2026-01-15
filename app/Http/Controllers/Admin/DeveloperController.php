@@ -80,59 +80,91 @@ class DeveloperController extends Controller
             return response()->json(['message' => 'Confirmation invalide'], 422);
         }
 
+        // Tables to clear
+        $tables = [
+            'wallet_transactions',
+            'rides',
+            'notifications',
+            'otp_requests',
+            'ratings',
+            'geocoding_logs',
+            'payments',
+            'analytics_reconnections',
+            'app_metrics',
+        ];
+
         \DB::beginTransaction();
         try {
-            // Count before deletion
-            $counts = [
-                'rides' => \DB::table('rides')->count(),
-                'wallet_transactions' => \DB::table('wallet_transactions')->count(),
-                'notifications' => \DB::table('notifications')->count(),
-                'otp_requests' => \DB::table('otp_requests')->count(),
-            ];
+            // Count before deletion to report
+            $counts = [];
+            foreach ($tables as $table) {
+                if (\Schema::hasTable($table)) {
+                    $counts[$table] = \DB::table($table)->count();
+                }
+            }
 
-            // Disable foreign key checks to allow truncation
+            // Disable foreign key checks
             \DB::statement('SET FOREIGN_KEY_CHECKS=0');
 
-            // Delete in order to respect foreign keys
-            \DB::table('wallet_transactions')->truncate();
-            \DB::table('rides')->truncate();
-            \DB::table('notifications')->truncate();
-            \DB::table('otp_requests')->truncate();
+            foreach ($tables as $table) {
+                if (\Schema::hasTable($table)) {
+                    // Using DELETE instead of TRUNCATE for better compatibility on shared hosting
+                    \DB::table($table)->delete();
+                    // Optional: Reset auto-increment
+                    \DB::statement("ALTER TABLE $table AUTO_INCREMENT = 1");
+                }
+            }
 
             // Re-enable foreign key checks
             \DB::statement('SET FOREIGN_KEY_CHECKS=1');
 
             // Reset all wallet balances to 0
-            \DB::table('wallets')->update(['balance' => 0]);
+            if (\Schema::hasTable('wallets')) {
+                \DB::table('wallets')->update(['balance' => 0]);
+            }
 
-            // Clear the log file
-            $logPath = storage_path('logs/laravel.log');
-            if (file_exists($logPath)) {
-                file_put_contents($logPath, '');
+            // Clear the log file if reachable
+            try {
+                $logPath = storage_path('logs/laravel.log');
+                if (file_exists($logPath) && is_writable($logPath)) {
+                    file_put_contents($logPath, '');
+                }
+            } catch (\Exception $e) {
+                // Ignore log clear errors
             }
 
             \DB::commit();
 
-            \Log::info('Developer reset data executed', [
-                'admin_id' => auth()->id(),
-                'deleted' => $counts,
-            ]);
+            try {
+                \Log::info('Developer reset data executed', [
+                    'admin_id' => auth()->id(),
+                    'deleted' => $counts,
+                ]);
+            } catch (\Exception $e) {
+                // Ignore logging errors if storage is not writable
+            }
 
             return response()->json([
                 'ok' => true,
-                'message' => 'Toutes les données ont été réinitialisées',
+                'message' => 'Toutes les données ont été réinitialisées avec succès.',
                 'deleted' => $counts,
             ]);
 
         } catch (\Exception $e) {
             \DB::rollBack();
-            \Log::error('Reset data failed', ['error' => $e->getMessage()]);
+
+            // Try to log the error but don't crash if log fails
+            try {
+                \Log::error('Reset data failed', ['error' => $e->getMessage()]);
+            } catch (\Exception $logEx) {
+            }
 
             return response()->json([
-                'message' => 'Erreur lors de la réinitialisation',
+                'message' => 'Erreur lors de la réinitialisation (BD)',
                 'error' => $e->getMessage(),
             ], 500);
         }
     }
 }
+
 
