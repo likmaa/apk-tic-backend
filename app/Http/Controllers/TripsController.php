@@ -518,213 +518,229 @@ class TripsController extends Controller
             return response()->json(['message' => 'Invalid state'], 422);
         }
 
-        // Execute all DB operations in a transaction
-        $result = DB::transaction(function () use ($ride, $driver) {
-            // Handle active stop if not ended
-            if ($ride->stop_started_at) {
-                $duration = (int) now()->diffInSeconds($ride->stop_started_at, true);
-                $ride->total_stop_duration_s += $duration;
-                $ride->stop_started_at = null;
-            }
+        try {
+            // Execute all DB operations in a transaction
+            $result = DB::transaction(function () use ($ride, $driver) {
+                // Handle active stop if not ended
+                if ($ride->stop_started_at) {
+                    $duration = (int) now()->diffInSeconds($ride->stop_started_at, true);
+                    $ride->total_stop_duration_s += $duration;
+                    $ride->stop_started_at = null;
+                }
 
-            // Get pricing settings
-            $pricing = Cache::remember('pricing.config', 60, function () {
-                $s = PricingSetting::query()->first();
+                // Get pricing settings
+                $pricing = Cache::remember('pricing.config', 60, function () {
+                    $s = PricingSetting::query()->first();
+                    return [
+                        'base_fare' => (int) ($s?->base_fare ?? 500),
+                        'per_km' => (int) ($s?->per_km ?? 250),
+                        'min_fare' => (int) ($s?->min_fare ?? 1000),
+                        'platform_pct' => (int) ($s?->platform_commission_pct ?? 70),
+                        'driver_pct' => (int) ($s?->driver_commission_pct ?? 20),
+                        'maintenance_pct' => (int) ($s?->maintenance_commission_pct ?? 10),
+                        'stop_rate_per_min' => (int) ($s?->stop_rate_per_min ?? 5),
+                        'weather' => [
+                            'enabled' => (bool) ($s?->weather_mode_enabled ?? false),
+                            'multiplier' => (float) ($s?->weather_multiplier ?? 1.0),
+                        ],
+                        'night' => [
+                            'multiplier' => (float) ($s?->night_multiplier ?? 1.0),
+                            'start_time' => substr((string) ($s?->night_start_time ?? '22:00'), 0, 5),
+                            'end_time' => substr((string) ($s?->night_end_time ?? '06:00'), 0, 5),
+                        ],
+                        'peak_hours' => [
+                            'enabled' => (bool) ($s?->peak_hours_enabled ?? false),
+                            'multiplier' => (float) ($s?->peak_hours_multiplier ?? 1.0),
+                            'start_time' => substr((string) ($s?->peak_hours_start_time ?? '17:00'), 0, 5),
+                            'end_time' => substr((string) ($s?->peak_hours_end_time ?? '20:00'), 0, 5),
+                        ],
+                    ];
+                });
+
+                // 1. Calculate trajectory price (Base + Distance)
+                $distanceKm = ($ride->distance_m ?? 0) / 1000.0;
+                $trajectoryPrice = $pricing['base_fare'] + ($distanceKm * $pricing['per_km']);
+
+                // Apply multipliers to trajectory only
+                if ($ride->vehicle_type === 'vip') {
+                    $trajectoryPrice *= 1.5;
+                }
+
+                if ($pricing['peak_hours']['enabled'] && $this->isCurrentlyInTimeRange($pricing['peak_hours']['start_time'], $pricing['peak_hours']['end_time'])) {
+                    $trajectoryPrice *= $pricing['peak_hours']['multiplier'];
+                }
+
+                if ($pricing['weather']['enabled']) {
+                    $trajectoryPrice *= $pricing['weather']['multiplier'];
+                }
+
+                if ($pricing['night']['multiplier'] > 1.0 && $this->isCurrentlyInTimeRange($pricing['night']['start_time'], $pricing['night']['end_time'])) {
+                    $trajectoryPrice *= $pricing['night']['multiplier'];
+                }
+
+                // Ensure trajectory meets minimum fare
+                $trajectoryPrice = max($pricing['min_fare'], (int) round($trajectoryPrice));
+
+                // 2. Calculate stop price
+                $stopMinutes = floor($ride->total_stop_duration_s / 60.0);
+                $stopPrice = (int) ($stopMinutes * $pricing['stop_rate_per_min']);
+
+                // Final fare
+                $fare = $trajectoryPrice + $stopPrice;
+                $ride->fare_amount = $fare;
+
+                // 3. Calculate Commissions
+                $platformPct = $pricing['platform_pct'];
+                $driverPct = $pricing['driver_pct'];
+                $maintenancePct = $pricing['maintenance_pct'];
+
+                $platformAmount = (int) round($fare * ($platformPct / 100));
+                $driverAmount = (int) round($fare * ($driverPct / 100));
+                $maintenanceAmount = (int) round($fare * ($maintenancePct / 100));
+
+                $totalComm = $platformAmount + $driverAmount + $maintenanceAmount;
+                if ($totalComm !== $fare) {
+                    $platformAmount += ($fare - $totalComm);
+                }
+
+                $ride->commission_amount = $platformAmount + $maintenanceAmount;
+                $ride->driver_earnings_amount = $driverAmount;
+                $ride->status = 'completed';
+                $ride->completed_at = now();
+                $ride->save();
+
+                // 4. Handle Wallet Movements based on Payment Method
+                $wallet = DB::table('wallets')->where('user_id', $driver->id)->first();
+                if (!$wallet) {
+                    $walletId = DB::table('wallets')->insertGetId([
+                        'user_id' => $driver->id,
+                        'balance' => 0,
+                        'currency' => $ride->currency ?? 'XOF',
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                    $wallet = (object) ['id' => $walletId, 'balance' => 0];
+                }
+
+                $before = (int) $wallet->balance;
+                $after = $before;
+
+                $pm = $ride->payment_method ?? 'cash'; // Default to cash if not set
+
+                if ($pm === 'cash') {
+                    // Cash: Driver collected 100% Fare.
+                    // We must DEBIT the Commission (Platform + Maintenance).
+                    $commissionToDeduct = $ride->commission_amount; // Platform + Maint
+                    $after = $before - $commissionToDeduct;
+
+                    DB::table('wallet_transactions')->insert([
+                        'wallet_id' => $wallet->id,
+                        'type' => 'debit',
+                        'source' => 'commission_deduction',
+                        'amount' => $commissionToDeduct,
+                        'balance_before' => $before,
+                        'balance_after' => $after,
+                        'meta' => json_encode(['ride_id' => $ride->id, 'desc' => 'Commission for cash ride']),
+                        'created_at' => now(),
+                    ]);
+                } elseif ($pm === 'wallet') {
+                    // Wallet: System collected 100% Fare.
+                    // We CREDIT Driver Earnings.
+                    $earningsToCredit = $ride->driver_earnings_amount;
+                    $after = $before + $earningsToCredit;
+
+                    DB::table('wallet_transactions')->insert([
+                        'wallet_id' => $wallet->id,
+                        'type' => 'credit',
+                        'source' => 'ride_earnings',
+                        'amount' => $earningsToCredit,
+                        'balance_before' => $before,
+                        'balance_after' => $after,
+                        'meta' => json_encode(['ride_id' => $ride->id, 'desc' => 'Earnings for wallet ride']),
+                        'created_at' => now(),
+                    ]);
+                } elseif ($pm === 'qr' || $pm === 'card') {
+                    // Moneroo Payment Flow
+                    // We do NOT credit driver yet. We wait for Webhook.
+                    try {
+                        $moneroo = new \App\Services\MonerooService();
+                        // Rider info
+                        $rider = User::find($ride->rider_id);
+                        $customer = [
+                            'email' => $rider->email ?? 'customer@example.com',
+                            'first_name' => $rider->name ?? 'Client',
+                            'last_name' => 'TIC',
+                        ];
+
+                        // Note: We use the ride ID + timestamp to ensure uniqueness just in case
+                        $init = $moneroo->initializePayment(
+                            (float) $fare,
+                            'XOF',
+                            'RIDE-' . $ride->id . '-' . time(),
+                            "Paiement Course #{$ride->id}",
+                            $customer
+                        );
+
+                        if ($init && isset($init['checkout_url'])) {
+                            $ride->payment_link = $init['checkout_url'];
+                            $ride->external_reference = $init['id'] ?? null;
+                            $ride->payment_status = 'pending';
+                            $ride->save();
+                        }
+                    } catch (\Exception $e) {
+                        \Illuminate\Support\Facades\Log::error("Moneroo Init Failed: " . $e->getMessage());
+                    }
+                }
+
+                // Only update wallet balance if changed
+                if ($before !== $after) {
+                    DB::table('wallets')->where('id', $wallet->id)->update([
+                        'balance' => $after,
+                        'updated_at' => now(),
+                    ]);
+                }
+
+                // Refresh ride to get latest data and return result for broadcast
+                $ride->refresh();
+
                 return [
-                    'base_fare' => (int) ($s?->base_fare ?? 500),
-                    'per_km' => (int) ($s?->per_km ?? 250),
-                    'min_fare' => (int) ($s?->min_fare ?? 1000),
-                    'platform_pct' => (int) ($s?->platform_commission_pct ?? 70),
-                    'driver_pct' => (int) ($s?->driver_commission_pct ?? 20),
-                    'maintenance_pct' => (int) ($s?->maintenance_commission_pct ?? 10),
-                    'stop_rate_per_min' => (int) ($s?->stop_rate_per_min ?? 5),
-                    'weather' => [
-                        'enabled' => (bool) ($s?->weather_mode_enabled ?? false),
-                        'multiplier' => (float) ($s?->weather_multiplier ?? 1.0),
-                    ],
-                    'night' => [
-                        'multiplier' => (float) ($s?->night_multiplier ?? 1.0),
-                        'start_time' => substr((string) ($s?->night_start_time ?? '22:00'), 0, 5),
-                        'end_time' => substr((string) ($s?->night_end_time ?? '06:00'), 0, 5),
-                    ],
-                    'peak_hours' => [
-                        'enabled' => (bool) ($s?->peak_hours_enabled ?? false),
-                        'multiplier' => (float) ($s?->peak_hours_multiplier ?? 1.0),
-                        'start_time' => substr((string) ($s?->peak_hours_start_time ?? '17:00'), 0, 5),
-                        'end_time' => substr((string) ($s?->peak_hours_end_time ?? '20:00'), 0, 5),
-                    ],
+                    'ride' => $ride,
+                    'driverAmount' => $driverAmount,
                 ];
             });
 
-            // 1. Calculate trajectory price (Base + Distance)
-            $distanceKm = ($ride->distance_m ?? 0) / 1000.0;
-            $trajectoryPrice = $pricing['base_fare'] + ($distanceKm * $pricing['per_km']);
+            // IMPORTANT: Broadcast AFTER transaction is committed successfully
+            // This ensures the passenger only receives the event when DB is actually updated
+            broadcast(new RideCompleted($result['ride']));
 
-            // Apply multipliers to trajectory only
-            if ($ride->vehicle_type === 'vip') {
-                $trajectoryPrice *= 1.5;
-            }
+            \Illuminate\Support\Facades\Log::info("RideCompleted broadcast sent", [
+                'ride_id' => $result['ride']->id,
+                'rider_id' => $result['ride']->rider_id,
+                'status' => $result['ride']->status,
+            ]);
 
-            if ($pricing['peak_hours']['enabled'] && $this->isCurrentlyInTimeRange($pricing['peak_hours']['start_time'], $pricing['peak_hours']['end_time'])) {
-                $trajectoryPrice *= $pricing['peak_hours']['multiplier'];
-            }
+            return response()->json([
+                'ok' => true,
+                'ride_id' => $result['ride']->id,
+                'status' => $result['ride']->status,
+                'earned' => $result['driverAmount'],
+                'payment_link' => $result['ride']->payment_link ?? null
+            ]);
 
-            if ($pricing['weather']['enabled']) {
-                $trajectoryPrice *= $pricing['weather']['multiplier'];
-            }
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error("RideComplete FAILED", [
+                'ride_id' => $id,
+                'driver_id' => $driver?->id,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
 
-            if ($pricing['night']['multiplier'] > 1.0 && $this->isCurrentlyInTimeRange($pricing['night']['start_time'], $pricing['night']['end_time'])) {
-                $trajectoryPrice *= $pricing['night']['multiplier'];
-            }
-
-            // Ensure trajectory meets minimum fare
-            $trajectoryPrice = max($pricing['min_fare'], (int) round($trajectoryPrice));
-
-            // 2. Calculate stop price
-            $stopMinutes = floor($ride->total_stop_duration_s / 60.0);
-            $stopPrice = (int) ($stopMinutes * $pricing['stop_rate_per_min']);
-
-            // Final fare
-            $fare = $trajectoryPrice + $stopPrice;
-            $ride->fare_amount = $fare;
-
-            // 3. Calculate Commissions
-            $platformPct = $pricing['platform_pct'];
-            $driverPct = $pricing['driver_pct'];
-            $maintenancePct = $pricing['maintenance_pct'];
-
-            $platformAmount = (int) round($fare * ($platformPct / 100));
-            $driverAmount = (int) round($fare * ($driverPct / 100));
-            $maintenanceAmount = (int) round($fare * ($maintenancePct / 100));
-
-            $totalComm = $platformAmount + $driverAmount + $maintenanceAmount;
-            if ($totalComm !== $fare) {
-                $platformAmount += ($fare - $totalComm);
-            }
-
-            $ride->commission_amount = $platformAmount + $maintenanceAmount;
-            $ride->driver_earnings_amount = $driverAmount;
-            $ride->status = 'completed';
-            $ride->completed_at = now();
-            $ride->save();
-
-            // 4. Handle Wallet Movements based on Payment Method
-            $wallet = DB::table('wallets')->where('user_id', $driver->id)->first();
-            if (!$wallet) {
-                $walletId = DB::table('wallets')->insertGetId([
-                    'user_id' => $driver->id,
-                    'balance' => 0,
-                    'currency' => $ride->currency ?? 'XOF',
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-                $wallet = (object) ['id' => $walletId, 'balance' => 0];
-            }
-
-            $before = (int) $wallet->balance;
-            $after = $before;
-
-            $pm = $ride->payment_method ?? 'cash'; // Default to cash if not set
-
-            if ($pm === 'cash') {
-                // Cash: Driver collected 100% Fare.
-                // We must DEBIT the Commission (Platform + Maintenance).
-                $commissionToDeduct = $ride->commission_amount; // Platform + Maint
-                $after = $before - $commissionToDeduct;
-
-                DB::table('wallet_transactions')->insert([
-                    'wallet_id' => $wallet->id,
-                    'type' => 'debit',
-                    'source' => 'commission_deduction',
-                    'amount' => $commissionToDeduct,
-                    'balance_before' => $before,
-                    'balance_after' => $after,
-                    'meta' => json_encode(['ride_id' => $ride->id, 'desc' => 'Commission for cash ride']),
-                    'created_at' => now(),
-                ]);
-            } elseif ($pm === 'wallet') {
-                // Wallet: System collected 100% Fare.
-                // We CREDIT Driver Earnings.
-                $earningsToCredit = $ride->driver_earnings_amount;
-                $after = $before + $earningsToCredit;
-
-                DB::table('wallet_transactions')->insert([
-                    'wallet_id' => $wallet->id,
-                    'type' => 'credit',
-                    'source' => 'ride_earnings',
-                    'amount' => $earningsToCredit,
-                    'balance_before' => $before,
-                    'balance_after' => $after,
-                    'meta' => json_encode(['ride_id' => $ride->id, 'desc' => 'Earnings for wallet ride']),
-                    'created_at' => now(),
-                ]);
-            } elseif ($pm === 'qr' || $pm === 'card') {
-                // Moneroo Payment Flow
-                // We do NOT credit driver yet. We wait for Webhook.
-                try {
-                    $moneroo = new \App\Services\MonerooService();
-                    // Rider info
-                    $rider = User::find($ride->rider_id);
-                    $customer = [
-                        'email' => $rider->email ?? 'customer@example.com',
-                        'first_name' => $rider->name ?? 'Client',
-                        'last_name' => 'TIC',
-                    ];
-
-                    // Note: We use the ride ID + timestamp to ensure uniqueness just in case
-                    $init = $moneroo->initializePayment(
-                        (float) $fare,
-                        'XOF',
-                        'RIDE-' . $ride->id . '-' . time(),
-                        "Paiement Course #{$ride->id}",
-                        $customer
-                    );
-
-                    if ($init && isset($init['checkout_url'])) {
-                        $ride->payment_link = $init['checkout_url'];
-                        $ride->external_reference = $init['id'] ?? null;
-                        $ride->payment_status = 'pending';
-                        $ride->save();
-                    }
-                } catch (\Exception $e) {
-                    \Illuminate\Support\Facades\Log::error("Moneroo Init Failed: " . $e->getMessage());
-                }
-            }
-
-            // Only update wallet balance if changed
-            if ($before !== $after) {
-                DB::table('wallets')->where('id', $wallet->id)->update([
-                    'balance' => $after,
-                    'updated_at' => now(),
-                ]);
-            }
-
-            // Refresh ride to get latest data and return result for broadcast
-            $ride->refresh();
-
-            return [
-                'ride' => $ride,
-                'driverAmount' => $driverAmount,
-            ];
-        });
-
-        // IMPORTANT: Broadcast AFTER transaction is committed successfully
-        // This ensures the passenger only receives the event when DB is actually updated
-        broadcast(new RideCompleted($result['ride']));
-
-        \Illuminate\Support\Facades\Log::info("RideCompleted broadcast sent", [
-            'ride_id' => $result['ride']->id,
-            'rider_id' => $result['ride']->rider_id,
-            'status' => $result['ride']->status,
-        ]);
-
-        return response()->json([
-            'ok' => true,
-            'ride_id' => $result['ride']->id,
-            'status' => $result['ride']->status,
-            'earned' => $result['driverAmount'],
-            'payment_link' => $result['ride']->payment_link ?? null
-        ]);
+            return response()->json([
+                'message' => 'Failed to complete ride',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function cancelByDriver(Request $request, int $id)
