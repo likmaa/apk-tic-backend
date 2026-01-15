@@ -89,4 +89,10 @@ class User extends Authenticatable
     {
         return $this->hasOne(DriverProfile::class);
     }
+
+    public function ratings()
+    {
+        return $this->hasMany(Rating::class, 'driver_id');
+    }
 }
+
