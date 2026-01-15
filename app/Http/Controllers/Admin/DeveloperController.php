@@ -11,7 +11,7 @@ class DeveloperController extends Controller
     public function logs(Request $request)
     {
         $path = storage_path('logs/laravel.log');
-        
+
         if (!File::exists($path)) {
             return response()->json(['content' => 'Fichier de log non trouvé.']);
         }
@@ -28,14 +28,18 @@ class DeveloperController extends Controller
     private function tailCustom($filepath, $lines = 100, $adaptive = true)
     {
         $f = @fopen($filepath, "rb");
-        if ($f === false) return false;
+        if ($f === false)
+            return false;
 
-        if (!$adaptive) $buffer = 4096;
-        else $buffer = ($lines < 2 ? 64 : ($lines < 10 ? 512 : 4096));
+        if (!$adaptive)
+            $buffer = 4096;
+        else
+            $buffer = ($lines < 2 ? 64 : ($lines < 10 ? 512 : 4096));
 
         fseek($f, -1, SEEK_END);
-        if (fread($f, 1) != "\n") $lines -= 1;
-        
+        if (fread($f, 1) != "\n")
+            $lines -= 1;
+
         $output = '';
         $chunk = '';
 
@@ -59,4 +63,70 @@ class DeveloperController extends Controller
         fclose($f);
         return implode("\n", $split);
     }
+
+    /**
+     * Reset all application data for production deployment.
+     * POST /api/admin/dev/reset-data
+     * 
+     * ⚠️ DANGER: This will delete all rides, transactions, and reset wallets!
+     */
+    public function resetData(Request $request)
+    {
+        $data = $request->validate([
+            'confirm' => ['required', 'string', 'in:RESET_ALL_DATA'],
+        ]);
+
+        if ($data['confirm'] !== 'RESET_ALL_DATA') {
+            return response()->json(['message' => 'Confirmation invalide'], 422);
+        }
+
+        \DB::beginTransaction();
+        try {
+            // Count before deletion
+            $counts = [
+                'rides' => \DB::table('rides')->count(),
+                'wallet_transactions' => \DB::table('wallet_transactions')->count(),
+                'notifications' => \DB::table('notifications')->count(),
+                'otp_requests' => \DB::table('otp_requests')->count(),
+            ];
+
+            // Delete in order to respect foreign keys
+            \DB::table('wallet_transactions')->truncate();
+            \DB::table('rides')->truncate();
+            \DB::table('notifications')->truncate();
+            \DB::table('otp_requests')->truncate();
+
+            // Reset all wallet balances to 0
+            \DB::table('wallets')->update(['balance' => 0]);
+
+            // Clear the log file
+            $logPath = storage_path('logs/laravel.log');
+            if (file_exists($logPath)) {
+                file_put_contents($logPath, '');
+            }
+
+            \DB::commit();
+
+            \Log::info('Developer reset data executed', [
+                'admin_id' => auth()->id(),
+                'deleted' => $counts,
+            ]);
+
+            return response()->json([
+                'ok' => true,
+                'message' => 'Toutes les données ont été réinitialisées',
+                'deleted' => $counts,
+            ]);
+
+        } catch (\Exception $e) {
+            \DB::rollBack();
+            \Log::error('Reset data failed', ['error' => $e->getMessage()]);
+
+            return response()->json([
+                'message' => 'Erreur lors de la réinitialisation',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
 }
+

@@ -113,6 +113,7 @@ Route::prefix('admin')->group(function () {
 
     Route::middleware(['auth:sanctum', 'role:developer'])->group(function () {
         Route::get('/dev/logs', [\App\Http\Controllers\Admin\DeveloperController::class, 'logs']);
+        Route::post('/dev/reset-data', [\App\Http\Controllers\Admin\DeveloperController::class, 'resetData']);
     });
 });
 
