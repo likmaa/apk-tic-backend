@@ -9,19 +9,35 @@ use Illuminate\Http\Request;
 
 class PassengerLineController extends Controller
 {
-    public function stops()
+    public function stops(Request $request)
     {
-        return Stop::orderBy('name')->get(['id', 'code', 'name', 'lat', 'lng']);
+        $role = $request->query('role'); // embark, disembark
+        $lineId = $request->query('line_id');
+
+        $query = Stop::query();
+
+        if ($lineId) {
+            $query->whereHas('lines', function ($q) use ($lineId) {
+                $q->where('lines.id', $lineId);
+            });
+        }
+
+
+        if ($role === 'embark') {
+            $query->whereIn('type', ['embark', 'both']);
+        } elseif ($role === 'disembark') {
+            $query->whereIn('type', ['disembark', 'both']);
+        }
+
+        return $query->orderBy('name')->get(['id', 'code', 'name', 'type', 'lat', 'lng']);
     }
 
     public function lines()
     {
-        return Line::with([
-            'stops' => function ($q) {
-                $q->orderBy('pivot_position');
-            }
-        ])->get();
+        // On retourne les lignes avec leurs arrêts triés par position dans la ligne
+        return Line::with(['stops'])->get();
     }
+
 
     public function estimate(Request $request)
     {

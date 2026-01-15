@@ -13,4 +13,15 @@ class Stop extends Model
         'lat',
         'lng',
     ];
+
+    protected $casts = [
+        'lat' => 'float',
+        'lng' => 'float',
+    ];
+
+    public function lines()
+    {
+        return $this->belongsToMany(Line::class, 'line_stops');
+    }
 }
+
