@@ -102,6 +102,13 @@ Route::prefix('admin')->group(function () {
         // Settings
         Route::get('/settings', [\App\Http\Controllers\Admin\SettingsController::class, 'index']);
         Route::post('/settings', [\App\Http\Controllers\Admin\SettingsController::class, 'update']);
+
+        // Driver Wallet & Debt Management
+        Route::get('/drivers/debts', [\App\Http\Controllers\Admin\WalletController::class, 'driversDebts']);
+        Route::post('/wallets/{walletId}/adjust', [\App\Http\Controllers\Admin\WalletController::class, 'adjustBalance']);
+        Route::get('/wallets/{walletId}/transactions', [\App\Http\Controllers\Admin\WalletController::class, 'transactions']);
+        Route::post('/drivers/{driverId}/block', [\App\Http\Controllers\Admin\WalletController::class, 'blockDriver']);
+        Route::post('/drivers/{driverId}/unblock', [\App\Http\Controllers\Admin\WalletController::class, 'unblockDriver']);
     });
 
     Route::middleware(['auth:sanctum', 'role:developer'])->group(function () {
