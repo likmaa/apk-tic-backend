@@ -22,6 +22,11 @@ class ModerationController extends Controller
 
     public function logs(Request $request)
     {
+        // Check if table exists to avoid crash if migration not run
+        if (!DB::getSchemaBuilder()->hasTable('moderation_logs')) {
+            return response()->json(['data' => []]);
+        }
+
         // Get moderation logs from database
         $logs = DB::table('moderation_logs')
             ->orderBy('created_at', 'desc')
@@ -43,6 +48,7 @@ class ModerationController extends Controller
             'data' => $logs,
         ]);
     }
+
 
     /**
      * Suspend a user temporarily
@@ -164,28 +170,9 @@ class ModerationController extends Controller
         ]);
     }
 
-    /**
-     * Log moderation action
-     */
     private function logAction(string $action, object $user, string $reason): void
     {
         try {
-            // Create moderation_logs table if it doesn't exist
-            if (!DB::getSchemaBuilder()->hasTable('moderation_logs')) {
-                DB::statement('CREATE TABLE IF NOT EXISTS moderation_logs (
-                    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-                    moderator_id BIGINT UNSIGNED,
-                    moderator_name VARCHAR(255),
-                    action VARCHAR(50),
-                    target_id BIGINT UNSIGNED,
-                    target_name VARCHAR(255),
-                    target_type VARCHAR(50),
-                    reason TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                )');
-            }
-
             DB::table('moderation_logs')->insert([
                 'moderator_id' => auth()->id(),
                 'moderator_name' => auth()->user()?->name ?? 'Admin',
@@ -201,5 +188,6 @@ class ModerationController extends Controller
             Log::warning('Failed to log moderation action', ['error' => $e->getMessage()]);
         }
     }
+
 }
 

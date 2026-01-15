@@ -58,12 +58,15 @@ class FinanceController extends Controller
                 return [
                     'id' => $ride->id,
                     'type' => 'ride_payment',
-                    'amount' => (int) $ride->fare_amount,
+                    'amount' => (float) $ride->fare_amount,
+                    'commission' => (float) $ride->commission_amount,
+                    'payout' => (float) $ride->driver_earnings_amount,
                     'currency' => $ride->currency,
                     'status' => 'succeeded',
                     'created_at' => $ride->completed_at,
                 ];
             })->all();
+
 
         $rewards = DriverReward::query()
             ->orderByDesc('created_at')
