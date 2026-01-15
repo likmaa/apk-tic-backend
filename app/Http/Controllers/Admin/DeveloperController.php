@@ -90,11 +90,17 @@ class DeveloperController extends Controller
                 'otp_requests' => \DB::table('otp_requests')->count(),
             ];
 
+            // Disable foreign key checks to allow truncation
+            \DB::statement('SET FOREIGN_KEY_CHECKS=0');
+
             // Delete in order to respect foreign keys
             \DB::table('wallet_transactions')->truncate();
             \DB::table('rides')->truncate();
             \DB::table('notifications')->truncate();
             \DB::table('otp_requests')->truncate();
+
+            // Re-enable foreign key checks
+            \DB::statement('SET FOREIGN_KEY_CHECKS=1');
 
             // Reset all wallet balances to 0
             \DB::table('wallets')->update(['balance' => 0]);
