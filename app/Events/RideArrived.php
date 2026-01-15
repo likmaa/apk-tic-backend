@@ -21,7 +21,7 @@ class RideArrived implements ShouldBroadcastNow
     {
         return [
             new PrivateChannel('rider.' . $this->ride->rider_id),
-            new PrivateChannel('private-ride.' . $this->ride->id),
+            new PrivateChannel('ride.' . $this->ride->id), // Fixed: removed 'private-' prefix (Laravel adds it automatically)
         ];
     }
 

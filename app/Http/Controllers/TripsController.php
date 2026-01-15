@@ -518,7 +518,8 @@ class TripsController extends Controller
             return response()->json(['message' => 'Invalid state'], 422);
         }
 
-        return DB::transaction(function () use ($ride, $driver) {
+        // Execute all DB operations in a transaction
+        $result = DB::transaction(function () use ($ride, $driver) {
             // Handle active stop if not ended
             if ($ride->stop_started_at) {
                 $duration = (int) now()->diffInSeconds($ride->stop_started_at, true);
@@ -698,18 +699,32 @@ class TripsController extends Controller
                 ]);
             }
 
-            // Include payment link in broadcast for everyone (Driver/Passenger)
+            // Refresh ride to get latest data and return result for broadcast
             $ride->refresh();
-            broadcast(new RideCompleted($ride));
 
-            return response()->json([
-                'ok' => true,
-                'ride_id' => $ride->id,
-                'status' => $ride->status,
-                'earned' => $driverAmount,
-                'payment_link' => $ride->payment_link ?? null
-            ]);
+            return [
+                'ride' => $ride,
+                'driverAmount' => $driverAmount,
+            ];
         });
+
+        // IMPORTANT: Broadcast AFTER transaction is committed successfully
+        // This ensures the passenger only receives the event when DB is actually updated
+        broadcast(new RideCompleted($result['ride']));
+
+        \Illuminate\Support\Facades\Log::info("RideCompleted broadcast sent", [
+            'ride_id' => $result['ride']->id,
+            'rider_id' => $result['ride']->rider_id,
+            'status' => $result['ride']->status,
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'ride_id' => $result['ride']->id,
+            'status' => $result['ride']->status,
+            'earned' => $result['driverAmount'],
+            'payment_link' => $result['ride']->payment_link ?? null
+        ]);
     }
 
     public function cancelByDriver(Request $request, int $id)
