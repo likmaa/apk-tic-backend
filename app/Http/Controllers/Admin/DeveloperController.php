@@ -179,4 +179,55 @@ class DeveloperController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Purge stats only (rides, transactions, ratings) without deleting users.
+     * POST /api/admin/dev/purge-stats
+     */
+    public function purgeStats(Request $request)
+    {
+        $data = $request->validate([
+            'confirm' => ['required', 'string', 'in:PURGE_STATS_ONLY'],
+        ]);
+
+        $tables = [
+            'wallet_transactions',
+            'rides',
+            'ratings',
+            'analytics_reconnections',
+            'app_metrics',
+            'notifications',
+        ];
+
+        \DB::beginTransaction();
+        try {
+            \DB::statement('SET FOREIGN_KEY_CHECKS=0');
+
+            foreach ($tables as $table) {
+                if (\Schema::hasTable($table)) {
+                    \DB::table($table)->delete();
+                }
+            }
+
+            \DB::statement('SET FOREIGN_KEY_CHECKS=1');
+
+            if (\Schema::hasTable('wallets')) {
+                \DB::table('wallets')->update(['balance' => 0]);
+            }
+
+            \DB::commit();
+
+            return response()->json([
+                'ok' => true,
+                'message' => 'Les statistiques et transactions ont été purgées avec succès.',
+            ]);
+        } catch (\Exception $e) {
+            \DB::rollBack();
+            return response()->json([
+                'message' => 'Erreur lors de la purge',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }
+
