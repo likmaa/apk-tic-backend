@@ -91,7 +91,7 @@ class DeveloperController extends Controller
             return response()->json(['message' => 'Confirmation invalide'], 422);
         }
 
-        // Tables to clear
+        // Expanded list of tables to clear
         $tables = [
             'wallet_transactions',
             'rides',
@@ -102,6 +102,12 @@ class DeveloperController extends Controller
             'payments',
             'analytics_reconnections',
             'app_metrics',
+            'driver_rewards',
+            'driver_payouts', // Just in case it exists
+            'addresses',      // Clear addresses if they are ride-related
+            'stops',          // If these are user-created/volatile
+            'lines',          // If these are user-created/volatile
+            'line_stops',     // If these are user-created/volatile
         ];
 
         \DB::beginTransaction();
@@ -109,8 +115,12 @@ class DeveloperController extends Controller
             // Count before deletion to report
             $counts = [];
             foreach ($tables as $table) {
-                if (\Schema::hasTable($table)) {
-                    $counts[$table] = \DB::table($table)->count();
+                try {
+                    if (\Schema::hasTable($table)) {
+                        $counts[$table] = \DB::table($table)->count();
+                    }
+                } catch (\Exception $e) {
+                    // Ignore count errors
                 }
             }
 
@@ -118,11 +128,14 @@ class DeveloperController extends Controller
             \DB::statement('SET FOREIGN_KEY_CHECKS=0');
 
             foreach ($tables as $table) {
-                if (\Schema::hasTable($table)) {
-                    // Using DELETE instead of TRUNCATE for better compatibility on shared hosting
-                    \DB::table($table)->delete();
-                    // Optional: Reset auto-increment
-                    \DB::statement("ALTER TABLE $table AUTO_INCREMENT = 1");
+                try {
+                    if (\Schema::hasTable($table)) {
+                        \DB::table($table)->delete();
+                        // Removing ALTER TABLE AUTO_INCREMENT as it might require extra privileges
+                    }
+                } catch (\Exception $e) {
+                    \Log::warning("Could not clear table $table", ['error' => $e->getMessage()]);
+                    // Continue to next table
                 }
             }
 
@@ -130,8 +143,12 @@ class DeveloperController extends Controller
             \DB::statement('SET FOREIGN_KEY_CHECKS=1');
 
             // Reset all wallet balances to 0
-            if (\Schema::hasTable('wallets')) {
-                \DB::table('wallets')->update(['balance' => 0]);
+            try {
+                if (\Schema::hasTable('wallets')) {
+                    \DB::table('wallets')->update(['balance' => 0]);
+                }
+            } catch (\Exception $e) {
+                \Log::warning("Could not reset wallet balances", ['error' => $e->getMessage()]);
             }
 
             // Clear the log file if reachable
@@ -146,15 +163,6 @@ class DeveloperController extends Controller
 
             \DB::commit();
 
-            try {
-                \Log::info('Developer reset data executed', [
-                    'admin_id' => auth()->id(),
-                    'deleted' => $counts,
-                ]);
-            } catch (\Exception $e) {
-                // Ignore logging errors if storage is not writable
-            }
-
             return response()->json([
                 'ok' => true,
                 'message' => 'Toutes les données ont été réinitialisées avec succès.',
@@ -164,18 +172,11 @@ class DeveloperController extends Controller
         } catch (\Exception $e) {
             \DB::rollBack();
 
-            // Try to log the error but don't crash if log fails
-            try {
-                \Log::error('Reset data failed', ['error' => $e->getMessage()]);
-            } catch (\Exception $logEx) {
-            }
-
             return response()->json([
                 'message' => 'Erreur lors de la réinitialisation (BD)',
                 'error' => $e->getMessage(),
+                'trace' => config('app.debug') ? $e->getTrace() : null
             ], 500);
         }
     }
 }
-
-
