@@ -4,33 +4,16 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class ModerationController extends Controller
 {
     public function queue(Request $request)
     {
-        $items = [
-            [
-                'id' => 'case_001',
-                'type' => 'report',
-                'subject_type' => 'driver',
-                'subject_name' => 'Carlos Rodriguez',
-                'reporter_name' => 'Alice Martin',
-                'reason' => 'Conduite dangereuse',
-                'date' => '2023-10-28T14:00:00Z',
-                'status' => 'pending_review',
-            ],
-            [
-                'id' => 'case_002',
-                'type' => 'report',
-                'subject_type' => 'passenger',
-                'subject_name' => 'Claire Durand',
-                'reporter_name' => 'Jean Dupont',
-                'reason' => 'Comportement irrespectueux',
-                'date' => '2023-10-27T20:15:00Z',
-                'status' => 'pending_review',
-            ],
-        ];
+        // Get pending moderation cases from database (if table exists)
+        // For now, return empty array - real implementation would query a reports table
+        $items = [];
 
         return response()->json([
             'data' => $items,
@@ -39,29 +22,184 @@ class ModerationController extends Controller
 
     public function logs(Request $request)
     {
-        $items = [
-            [
-                'id' => 'log_501',
-                'date' => '2023-10-26T11:00:00Z',
-                'moderator' => 'Admin',
-                'action' => 'suspended',
-                'target_name' => 'Carlos Rodriguez',
-                'target_type' => 'driver',
-                'reason' => 'Multiples signalements pour conduite dangereuse.',
-            ],
-            [
-                'id' => 'log_500',
-                'date' => '2023-10-25T09:30:00Z',
-                'moderator' => 'Admin',
-                'action' => 'warned',
-                'target_name' => 'Bob Lefebvre',
-                'target_type' => 'passenger',
-                'reason' => 'Annulation tardive répétée.',
-            ],
-        ];
+        // Get moderation logs from database
+        $logs = DB::table('moderation_logs')
+            ->orderBy('created_at', 'desc')
+            ->limit(50)
+            ->get()
+            ->map(function ($log) {
+                return [
+                    'id' => 'log_' . $log->id,
+                    'date' => $log->created_at,
+                    'moderator' => $log->moderator_name ?? 'Admin',
+                    'action' => $log->action,
+                    'target_name' => $log->target_name,
+                    'target_type' => $log->target_type,
+                    'reason' => $log->reason,
+                ];
+            });
 
         return response()->json([
-            'data' => $items,
+            'data' => $logs,
         ]);
     }
+
+    /**
+     * Suspend a user temporarily
+     */
+    public function suspend(Request $request, int $userId)
+    {
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'max:500'],
+            'duration_days' => ['nullable', 'integer', 'min:1', 'max:365'],
+        ]);
+
+        $user = DB::table('users')->where('id', $userId)->first();
+        if (!$user) {
+            return response()->json(['message' => 'Utilisateur non trouvé'], 404);
+        }
+
+        $suspendedUntil = $data['duration_days']
+            ? now()->addDays($data['duration_days'])
+            : now()->addDays(7);
+
+        DB::table('users')->where('id', $userId)->update([
+            'is_blocked' => true,
+            'blocked_reason' => 'Suspendu: ' . $data['reason'],
+            'blocked_at' => now(),
+            'suspended_until' => $suspendedUntil,
+            'updated_at' => now(),
+        ]);
+
+        $this->logAction('suspended', $user, $data['reason']);
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Utilisateur suspendu jusqu\'au ' . $suspendedUntil->format('d/m/Y'),
+        ]);
+    }
+
+    /**
+     * Ban a user permanently
+     */
+    public function ban(Request $request, int $userId)
+    {
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'max:500'],
+        ]);
+
+        $user = DB::table('users')->where('id', $userId)->first();
+        if (!$user) {
+            return response()->json(['message' => 'Utilisateur non trouvé'], 404);
+        }
+
+        DB::table('users')->where('id', $userId)->update([
+            'is_blocked' => true,
+            'blocked_reason' => 'Banni: ' . $data['reason'],
+            'blocked_at' => now(),
+            'suspended_until' => null, // Permanent
+            'updated_at' => now(),
+        ]);
+
+        $this->logAction('banned', $user, $data['reason']);
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Utilisateur banni définitivement',
+        ]);
+    }
+
+    /**
+     * Warn a user (no action, just log)
+     */
+    public function warn(Request $request, int $userId)
+    {
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'max:500'],
+        ]);
+
+        $user = DB::table('users')->where('id', $userId)->first();
+        if (!$user) {
+            return response()->json(['message' => 'Utilisateur non trouvé'], 404);
+        }
+
+        // Increment warning count if column exists
+        DB::table('users')->where('id', $userId)->increment('warnings_count');
+
+        $this->logAction('warned', $user, $data['reason']);
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Avertissement envoyé à l\'utilisateur',
+        ]);
+    }
+
+    /**
+     * Reinstate a banned/suspended user
+     */
+    public function reinstate(Request $request, int $userId)
+    {
+        $data = $request->validate([
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $user = DB::table('users')->where('id', $userId)->first();
+        if (!$user) {
+            return response()->json(['message' => 'Utilisateur non trouvé'], 404);
+        }
+
+        DB::table('users')->where('id', $userId)->update([
+            'is_blocked' => false,
+            'blocked_reason' => null,
+            'blocked_at' => null,
+            'suspended_until' => null,
+            'updated_at' => now(),
+        ]);
+
+        $this->logAction('reinstated', $user, $data['reason'] ?? 'Réintégré par modérateur');
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Utilisateur réintégré',
+        ]);
+    }
+
+    /**
+     * Log moderation action
+     */
+    private function logAction(string $action, object $user, string $reason): void
+    {
+        try {
+            // Create moderation_logs table if it doesn't exist
+            if (!DB::getSchemaBuilder()->hasTable('moderation_logs')) {
+                DB::statement('CREATE TABLE IF NOT EXISTS moderation_logs (
+                    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                    moderator_id BIGINT UNSIGNED,
+                    moderator_name VARCHAR(255),
+                    action VARCHAR(50),
+                    target_id BIGINT UNSIGNED,
+                    target_name VARCHAR(255),
+                    target_type VARCHAR(50),
+                    reason TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                )');
+            }
+
+            DB::table('moderation_logs')->insert([
+                'moderator_id' => auth()->id(),
+                'moderator_name' => auth()->user()?->name ?? 'Admin',
+                'action' => $action,
+                'target_id' => $user->id,
+                'target_name' => $user->name,
+                'target_type' => $user->role,
+                'reason' => $reason,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        } catch (\Exception $e) {
+            Log::warning('Failed to log moderation action', ['error' => $e->getMessage()]);
+        }
+    }
 }
+

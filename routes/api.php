@@ -114,6 +114,17 @@ Route::prefix('admin')->group(function () {
     Route::middleware(['auth:sanctum', 'role:developer'])->group(function () {
         Route::get('/dev/logs', [\App\Http\Controllers\Admin\DeveloperController::class, 'logs']);
         Route::post('/dev/reset-data', [\App\Http\Controllers\Admin\DeveloperController::class, 'resetData']);
+
+        // Analytics (developer only)
+        Route::get('/analytics/reconnections', [\App\Http\Controllers\Admin\AnalyticsController::class, 'reconnections']);
+    });
+
+    // Moderation actions (admin + developer)
+    Route::middleware(['auth:sanctum', 'role:admin,developer'])->group(function () {
+        Route::post('/moderation/{userId}/suspend', [\App\Http\Controllers\Admin\ModerationController::class, 'suspend']);
+        Route::post('/moderation/{userId}/ban', [\App\Http\Controllers\Admin\ModerationController::class, 'ban']);
+        Route::post('/moderation/{userId}/warn', [\App\Http\Controllers\Admin\ModerationController::class, 'warn']);
+        Route::post('/moderation/{userId}/reinstate', [\App\Http\Controllers\Admin\ModerationController::class, 'reinstate']);
     });
 });
 
