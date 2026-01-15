@@ -13,14 +13,25 @@ class DeveloperController extends Controller
         $path = storage_path('logs/laravel.log');
 
         if (!File::exists($path)) {
-            return response()->json(['content' => 'Fichier de log non trouvé.']);
+            // Try to find the most recent daily log if it exists
+            $files = File::glob(storage_path('logs/laravel-*.log'));
+            if (!empty($files)) {
+                rsort($files); // Get the newest one
+                $path = $files[0];
+            } else {
+                return response()->json(['content' => 'Aucun fichier de log trouvé dans storage/logs/.']);
+            }
         }
 
         // Read last 200 lines to avoid memory issues
         $content = $this->tailCustom($path, 200);
 
-        return response()->json(['content' => $content]);
+        return response()->json([
+            'content' => $content,
+            'file' => basename($path)
+        ]);
     }
+
 
     /**
      * Efficiently read the end of a file
