@@ -13,14 +13,21 @@ class RideAccepted implements ShouldBroadcast
     use InteractsWithSockets;
     use SerializesModels;
 
+    public float $createdAtTs;
+
     public function __construct(public Ride $ride)
     {
+        $this->createdAtTs = microtime(true);
+        \Log::info("RideAccepted Created", [
+            'rideId' => $this->ride?->id,
+            'ts' => $this->createdAtTs
+        ]);
     }
 
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('rider.'.$this->ride->rider_id),
+            new PrivateChannel('rider.' . $this->ride->rider_id),
         ];
     }
 
@@ -42,6 +49,11 @@ class RideAccepted implements ShouldBroadcast
                 'vehicle_number' => $driver->vehicle_number,
                 'photo' => $driver->photo,
             ] : null,
+            'debug_latency' => [
+                'created_at' => $this->createdAtTs,
+                'broadcast_at' => microtime(true),
+                'delay' => microtime(true) - $this->createdAtTs
+            ]
         ];
     }
 }
