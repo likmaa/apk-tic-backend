@@ -366,7 +366,7 @@ class TripsController extends Controller
 
             if ($existingRide) {
                 return response()->json([
-                    'message' => 'Une course est déjà en cours. Veuillez patienter.',
+                    'message' => 'La course que vous venez de lancé est déjà en cours. Veuillez patienter.',
                     'id' => $existingRide->id,
                     'status' => $existingRide->status
                 ], 422);
