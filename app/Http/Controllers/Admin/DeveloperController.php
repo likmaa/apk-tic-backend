@@ -229,5 +229,25 @@ class DeveloperController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Clear all application cache.
+     * POST /api/admin/dev/clear-cache
+     */
+    public function clearCache()
+    {
+        try {
+            \Illuminate\Support\Facades\Cache::flush();
+            return response()->json([
+                'ok' => true,
+                'message' => 'Le cache de l\'application a été vidé avec succès.',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Erreur lors du vidage du cache',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }
 

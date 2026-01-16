@@ -115,6 +115,7 @@ Route::prefix('admin')->group(function () {
         Route::get('/dev/logs', [\App\Http\Controllers\Admin\DeveloperController::class, 'logs']);
         Route::post('/dev/reset-data', [\App\Http\Controllers\Admin\DeveloperController::class, 'resetData']);
         Route::post('/dev/purge-stats', [\App\Http\Controllers\Admin\DeveloperController::class, 'purgeStats']);
+        Route::post('/dev/clear-cache', [\App\Http\Controllers\Admin\DeveloperController::class, 'clearCache']);
 
 
         // Analytics (developer only)

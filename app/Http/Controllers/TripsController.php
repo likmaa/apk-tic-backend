@@ -1628,7 +1628,7 @@ class TripsController extends Controller
         }
 
         $stopMinutes = floor($totalStopDuration / 60.0);
-        $stopPrice = (int) ($stopMinutes * $pricing['stop_rate_per_min']);
+        $stopPrice = (int) ($stopMinutes * ($pricing['stop_rate_per_min'] ?? 5));
 
         // 3. Calculate pickup waiting price
         $pickupWaitingPrice = 0;
