@@ -142,7 +142,7 @@ class TripsController extends Controller
 
         // Utilise OSRM public pour récupérer distance et durée + géométrie
         $url = 'https://router.project-osrm.org/route/v1/driving/' . $pickLng . ',' . $pickLat . ';' . $dropLng . ',' . $dropLat . '?overview=full&geometries=geojson';
-        
+
         try {
             $resp = Http::timeout(4)->get($url); // Reduced from 8s to 4s
             if (!$resp->ok()) {
@@ -357,65 +357,95 @@ class TripsController extends Controller
             'is_fragile' => ['nullable', 'boolean'],
         ]);
 
-        $pickupLat = (float) $request->input('pickup.lat');
-        $pickupLng = (float) $request->input('pickup.lng');
-        $pickupLabel = $request->input('pickup.label');
-        $dropoffLat = (float) $request->input('dropoff.lat');
-        $dropoffLng = (float) $request->input('dropoff.lng');
-        $dropoffLabel = $request->input('dropoff.label');
+        // Anti-duplicate: check for existing active ride
+        if ($user) {
+            $existingRide = Ride::where('rider_id', $user->id)
+                ->whereIn('status', ['requested', 'accepted', 'arrived', 'pickup'])
+                ->where('created_at', '>', now()->subMinutes(30))
+                ->first();
 
-        $ride = Ride::create([
-            'rider_id' => $user?->id,
-            'driver_id' => null,
-            'offered_driver_id' => null,
-            'status' => 'requested',
-            'fare_amount' => (int) $request->input('price'),
-            'commission_amount' => 0,
-            'driver_earnings_amount' => 0,
-            'currency' => 'XOF',
-            'distance_m' => (int) $request->input('distance_m'),
-            'duration_s' => (int) $request->input('duration_s'),
-            'pickup_lat' => $pickupLat,
-            'pickup_lng' => $pickupLng,
-            'pickup_address' => $pickupLabel,
-            'dropoff_lat' => $dropoffLat,
-            'dropoff_lng' => $dropoffLng,
-            'dropoff_address' => $dropoffLabel,
-            'passenger_name' => $request->input('passenger_name'),
-            'passenger_phone' => $request->input('passenger_phone'),
-            'vehicle_type' => $request->input('vehicle_type', 'standard'),
-            'has_baggage' => (bool) $request->input('has_baggage', false),
-            'payment_method' => $request->input('payment_method', 'cash'),
-            'service_type' => $request->input('service_type', 'course'),
-            'recipient_name' => $request->input('recipient_name'),
-            'recipient_phone' => $request->input('recipient_phone'),
-            'package_description' => $request->input('package_description'),
-            'package_weight' => $request->input('package_weight'),
-            'is_fragile' => (bool) $request->input('is_fragile', false),
-            'declined_driver_ids' => [],
-        ]);
-        // True Broadcast: on laisse offered_driver_id à null pour que tous les chauffeurs éligibles voient la course
-        broadcast(new RideRequested($ride));
+            if ($existingRide) {
+                return response()->json([
+                    'message' => 'Une course est déjà en cours. Veuillez patienter.',
+                    'id' => $existingRide->id,
+                    'status' => $existingRide->status
+                ], 422);
+            }
+        }
 
-        return response()->json([
-            'id' => $ride->id,
-            'status' => $ride->status,
-            'rider_id' => $ride->rider_id,
-            'driver_id' => $ride->driver_id,
-            'offered_driver_id' => $ride->offered_driver_id,
-            'distance_m' => $ride->distance_m,
-            'duration_s' => $ride->duration_s,
-            'price' => $ride->fare_amount,
-            'currency' => $ride->currency,
-            'passenger_name' => $ride->passenger_name,
-            'passenger_phone' => $ride->passenger_phone,
-            'stop_started_at' => $ride->stop_started_at,
-            'total_stop_duration_s' => $ride->total_stop_duration_s,
-            ...$this->calculateRideFareBreakdown($ride),
-            'vehicle_type' => $ride->vehicle_type,
-            'has_baggage' => (bool) $ride->has_baggage,
-        ], 201);
+        try {
+
+
+            $pickupLat = (float) $request->input('pickup.lat');
+            $pickupLng = (float) $request->input('pickup.lng');
+            $pickupLabel = $request->input('pickup.label');
+            $dropoffLat = (float) $request->input('dropoff.lat');
+            $dropoffLng = (float) $request->input('dropoff.lng');
+            $dropoffLabel = $request->input('dropoff.label');
+
+            $ride = Ride::create([
+                'rider_id' => $user?->id,
+                'driver_id' => null,
+                'offered_driver_id' => null,
+                'status' => 'requested',
+                'fare_amount' => (int) $request->input('price'),
+                'commission_amount' => 0,
+                'driver_earnings_amount' => 0,
+                'currency' => 'XOF',
+                'distance_m' => (int) $request->input('distance_m'),
+                'duration_s' => (int) $request->input('duration_s'),
+                'pickup_lat' => $pickupLat,
+                'pickup_lng' => $pickupLng,
+                'pickup_address' => $pickupLabel,
+                'dropoff_lat' => $dropoffLat,
+                'dropoff_lng' => $dropoffLng,
+                'dropoff_address' => $dropoffLabel,
+                'passenger_name' => $request->input('passenger_name'),
+                'passenger_phone' => $request->input('passenger_phone'),
+                'vehicle_type' => $request->input('vehicle_type', 'standard'),
+                'has_baggage' => (bool) $request->input('has_baggage', false),
+                'payment_method' => $request->input('payment_method', 'cash'),
+                'service_type' => $request->input('service_type', 'course'),
+                'recipient_name' => $request->input('recipient_name'),
+                'recipient_phone' => $request->input('recipient_phone'),
+                'package_description' => $request->input('package_description'),
+                'package_weight' => $request->input('package_weight'),
+                'is_fragile' => (bool) $request->input('is_fragile', false),
+                'declined_driver_ids' => [],
+            ]);
+            // True Broadcast: on laisse offered_driver_id à null pour que tous les chauffeurs éligibles voient la course
+            broadcast(new RideRequested($ride));
+
+            return response()->json([
+                'id' => $ride->id,
+                'status' => $ride->status,
+                'rider_id' => $ride->rider_id,
+                'driver_id' => $ride->driver_id,
+                'offered_driver_id' => $ride->offered_driver_id,
+                'distance_m' => $ride->distance_m,
+                'duration_s' => $ride->duration_s,
+                'price' => $ride->fare_amount,
+                'currency' => $ride->currency,
+                'passenger_name' => $ride->passenger_name,
+                'passenger_phone' => $ride->passenger_phone,
+                'stop_started_at' => $ride->stop_started_at,
+                'total_stop_duration_s' => $ride->total_stop_duration_s,
+                ...$this->calculateRideFareBreakdown($ride),
+                'vehicle_type' => $ride->vehicle_type,
+                'has_baggage' => (bool) $ride->has_baggage,
+            ], 201);
+        } catch (\Exception $e) {
+            \Log::error("CRITICAL ERROR during ride creation: " . $e->getMessage(), [
+                'user_id' => $user?->id,
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'message' => 'Erreur Serveur lors de la création de la course.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
+
 
     public function accept(Request $request, int $id)
     {
