@@ -6,10 +6,10 @@ use App\Models\Ride;
 use App\Models\User;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Queue\SerializesModels;
 
-class RideDeclined implements ShouldBroadcastNow
+class RideDeclined implements ShouldBroadcast
 {
     use InteractsWithSockets;
     use SerializesModels;

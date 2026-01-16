@@ -142,10 +142,25 @@ class TripsController extends Controller
 
         // Utilise OSRM public pour récupérer distance et durée + géométrie
         $url = 'https://router.project-osrm.org/route/v1/driving/' . $pickLng . ',' . $pickLat . ';' . $dropLng . ',' . $dropLat . '?overview=full&geometries=geojson';
-        $resp = Http::timeout(8)->get($url);
-        if (!$resp->ok()) {
-            return response()->json(['message' => 'Routing failed', 'status' => $resp->status()], 502);
+        
+        try {
+            $resp = Http::timeout(4)->get($url); // Reduced from 8s to 4s
+            if (!$resp->ok()) {
+                \Log::error("OSRM Routing failed for ride estimate", [
+                    'status' => $resp->status(),
+                    'body' => $resp->body(),
+                    'url' => $url
+                ]);
+                return response()->json(['message' => 'Routing services temporarily unavailable', 'status' => $resp->status()], 502);
+            }
+        } catch (\Exception $e) {
+            \Log::error("OSRM Routing timeout or exception", [
+                'error' => $e->getMessage(),
+                'url' => $url
+            ]);
+            return response()->json(['message' => 'Routing service timeout'], 504);
         }
+
         $json = $resp->json();
         $route = $json['routes'][0] ?? null;
         if (!$route) {
