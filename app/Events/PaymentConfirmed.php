@@ -5,10 +5,10 @@ namespace App\Events;
 use App\Models\Ride;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Queue\SerializesModels;
 
-class PaymentConfirmed implements ShouldBroadcast
+class PaymentConfirmed implements ShouldBroadcastNow
 {
     use InteractsWithSockets;
     use SerializesModels;

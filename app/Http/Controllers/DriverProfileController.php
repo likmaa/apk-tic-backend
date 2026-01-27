@@ -61,13 +61,16 @@ class DriverProfileController extends Controller
             'vehicle_color' => ['nullable', 'string', 'max:50'],
             'license_plate' => ['nullable', 'string', 'max:20'],
             'vehicle_type' => ['nullable', 'string', 'in:sedan,suv,van,compact'],
-            'photo' => ['nullable', 'string', 'max:255'],
+            'photo' => ['nullable'], // Accepter fichier ou string
             'documents' => ['nullable', 'array'],
         ]);
 
-        $profile = DB::transaction(function () use ($user, $data) {
+        $profile = DB::transaction(function () use ($user, $data, $request) {
             // Update User fields (legacy support)
-            if (!empty($data['photo'])) {
+            if ($request->hasFile('photo')) {
+                $path = $request->file('photo')->store('profiles', 'public');
+                $user->photo = $path; // Chemin relatif
+            } elseif (!empty($data['photo'])) {
                 $user->photo = $data['photo'];
             }
             $user->save();

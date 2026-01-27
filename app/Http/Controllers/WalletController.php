@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Ride;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Events\PaymentConfirmed;
 
 class WalletController extends Controller
 {
@@ -54,11 +55,11 @@ class WalletController extends Controller
 
             // Mapping simple pour l’app mobile
             $label = match ($row->source) {
-                'ride_payment'  => 'Paiement course',
+                'ride_payment' => 'Paiement course',
                 'ride_earnings' => 'Gain course',
-                'topup_cash'    => 'Rechargement (espèces)',
-                'topup_qr'      => 'Rechargement (QR)',
-                default         => ucfirst(str_replace('_', ' ', (string) $row->source)),
+                'topup_cash' => 'Rechargement (espèces)',
+                'topup_qr' => 'Rechargement (QR)',
+                default => ucfirst(str_replace('_', ' ', (string) $row->source)),
             };
 
             return [
@@ -169,6 +170,43 @@ class WalletController extends Controller
                     'balance' => $after,
                     'updated_at' => now(),
                 ]);
+
+                // Credit Driver Wallet
+                if ($ride->driver_id) {
+                    $earnings = $ride->driver_earnings_amount;
+                    if ($earnings > 0) {
+                        $driverWallet = DB::table('wallets')->where('user_id', $ride->driver_id)->first();
+                        if (!$driverWallet) {
+                            $dWid = DB::table('wallets')->insertGetId([
+                                'user_id' => $ride->driver_id,
+                                'balance' => 0,
+                                'currency' => $ride->currency ?? 'XOF',
+                                'created_at' => now(),
+                                'updated_at' => now(),
+                            ]);
+                            $driverWallet = (object) ['id' => $dWid, 'balance' => 0];
+                        }
+
+                        $dBefore = (int) $driverWallet->balance;
+                        $dAfter = $dBefore + $earnings;
+
+                        DB::table('wallet_transactions')->insert([
+                            'wallet_id' => $driverWallet->id,
+                            'type' => 'credit',
+                            'source' => 'ride_earnings',
+                            'amount' => $earnings,
+                            'balance_before' => $dBefore,
+                            'balance_after' => $dAfter,
+                            'meta' => json_encode(['ride_id' => $ride->id]),
+                            'created_at' => now(),
+                        ]);
+
+                        DB::table('wallets')->where('id', $driverWallet->id)->update([
+                            'balance' => $dAfter,
+                            'updated_at' => now(),
+                        ]);
+                    }
+                }
             }
 
             $paymentId = DB::table('payments')->insertGetId([
@@ -182,6 +220,13 @@ class WalletController extends Controller
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
+
+            // Update ride payment status
+            $ride->payment_status = 'completed';
+            $ride->save();
+
+            // Notify everyone
+            broadcast(new PaymentConfirmed($ride));
 
             $result = [
                 'ok' => true,

@@ -24,6 +24,10 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \App\Http\Middleware\RoleMiddleware::class,
             'driver.approved' => \App\Http\Middleware\EnsureDriverApproved::class,
         ]);
+
+        $middleware->validateCsrfTokens(except: [
+            'api/webhooks/kkiapay',
+        ]);
     })
     ->withSchedule(function ($schedule) {
         $schedule->command('rides:expire')->everyMinute();

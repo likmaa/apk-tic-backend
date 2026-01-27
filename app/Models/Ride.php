@@ -48,6 +48,10 @@ class Ride extends Model
         'package_description',
         'package_weight',
         'is_fragile',
+        'luggage_count',
+        'payment_status',
+        'payment_link',
+        'external_reference',
     ];
 
     protected $casts = [

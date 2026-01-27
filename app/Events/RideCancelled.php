@@ -7,10 +7,10 @@ use App\Models\User;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Queue\SerializesModels;
 
-class RideCancelled implements ShouldBroadcast
+class RideCancelled implements ShouldBroadcastNow
 {
     use InteractsWithSockets;
     use SerializesModels;

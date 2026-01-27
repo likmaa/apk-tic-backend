@@ -16,6 +16,7 @@ class PricingSetting extends Model
         'per_km',
         'per_min',
         'min_fare',
+        'luggage_unit_price',
         'peak_hours_enabled',
         'peak_hours_multiplier',
         'peak_hours_start_time',

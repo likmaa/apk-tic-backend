@@ -16,6 +16,8 @@ use App\Events\RideStarted;
 use App\Events\RideCompleted;
 use App\Events\RideStopUpdated;
 use App\Events\RideArrived;
+use App\Services\FcmService;
+use App\Models\FcmToken;
 
 use App\Models\PricingSetting;
 
@@ -34,86 +36,53 @@ class TripsController extends Controller
             'distance_m' => ['required', 'numeric', 'min:1'],
             'duration_s' => ['required', 'numeric', 'min:1'],
             'vehicle_type' => ['nullable', 'string', 'in:standard,vip'],
+            'luggage_count' => ['nullable', 'integer', 'min:0', 'max:3'],
         ]);
 
         $vehicleType = $request->input('vehicle_type', 'standard');
+        $luggageCount = (int) $request->input('luggage_count', 0);
 
         $distance = (float) $request->input('distance_m');
         $duration = (float) $request->input('duration_s');
 
-        $km = $distance / 1000.0;
-        $min = $duration / 60.0;
-        $pricing = Cache::remember('pricing.config', 60, function () {
-            $setting = PricingSetting::query()->first();
+        $km = (double) ($distance / 1000.0);
+        $pricing = $this->getPricingConfig();
 
-            if (!$setting) {
-                return [
-                    'base_fare' => 500,
-                    'per_km' => 250,
-                    'min_fare' => 1000,
-                    'peak_hours' => ['enabled' => false, 'multiplier' => 1.0, 'start_time' => '17:00', 'end_time' => '20:00'],
-                    'weather' => ['enabled' => false, 'multiplier' => 1.0],
-                    'night' => ['multiplier' => 1.0, 'start_time' => '22:00', 'end_time' => '06:00'],
-                ];
-            }
+        $base = (float) $pricing['base_fare'];
+        $perKm = (float) $pricing['per_km'];
 
-            return [
-                'base_fare' => (int) $setting->base_fare,
-                'per_km' => (int) $setting->per_km,
-                'min_fare' => (int) $setting->min_fare,
-                'peak_hours' => [
-                    'enabled' => (bool) $setting->peak_hours_enabled,
-                    'multiplier' => (float) $setting->peak_hours_multiplier,
-                    'start_time' => substr((string) $setting->peak_hours_start_time, 0, 5),
-                    'end_time' => substr((string) $setting->peak_hours_end_time, 0, 5),
-                ],
-                'weather' => [
-                    'enabled' => (bool) $setting->weather_mode_enabled,
-                    'multiplier' => (float) $setting->weather_multiplier,
-                ],
-                'night' => [
-                    'multiplier' => (float) $setting->night_multiplier,
-                    'start_time' => substr((string) $setting->night_start_time, 0, 5),
-                    'end_time' => substr((string) $setting->night_end_time, 0, 5),
-                ],
-            ];
-        });
-
-        $base = (float) ($pricing['base_fare'] ?? 500);
-        $perKm = (float) ($pricing['per_km'] ?? 250);
-
-        // Formule simplifiée : Base + (Distance_km * Tarif/km)
+        // Formula: Base + (Distance_km * Rate/km)
         $price = $base + ($perKm * $km);
 
-        // Multiplicateur VIP
+        // VIP Multiplier
         if ($vehicleType === 'vip') {
             $price *= 1.5;
         }
 
-        // Multiplicateur Heures de Pointe
-        $peak = $pricing['peak_hours'] ?? null;
-        if (is_array($peak) && !empty($peak['enabled'])) {
-            if ($this->isCurrentlyInTimeRange($peak['start_time'], $peak['end_time'])) {
-                $price *= (float) ($peak['multiplier'] ?? 1.0);
-            }
+        // Peak Hours Multiplier
+        $peak = $pricing['peak_hours'];
+        if ($peak['enabled'] && $this->isCurrentlyInTimeRange($peak['start_time'], $peak['end_time'])) {
+            $price *= (float) $peak['multiplier'];
         }
 
-        // Multiplicateur Météo (Pluie)
-        $weather = $pricing['weather'] ?? null;
-        if (is_array($weather) && !empty($weather['enabled'])) {
-            $price *= (float) ($weather['multiplier'] ?? 1.0);
+        // Weather Multiplier
+        $weather = $pricing['weather'];
+        if ($weather['enabled']) {
+            $price *= (float) $weather['multiplier'];
         }
 
-        // Multiplicateur Nuit
-        $night = $pricing['night'] ?? null;
-        if (is_array($night) && (float) ($night['multiplier'] ?? 1.0) > 1.0) {
-            if ($this->isCurrentlyInTimeRange($night['start_time'], $night['end_time'])) {
-                $price *= (float) $night['multiplier'];
-            }
+        // Night Multiplier
+        $night = $pricing['night'];
+        if ($night['multiplier'] > 1.0 && $this->isCurrentlyInTimeRange($night['start_time'], $night['end_time'])) {
+            $price *= (float) $night['multiplier'];
         }
 
-        $minFare = (float) ($pricing['min_fare'] ?? 1000);
-        $price = max($minFare, (int) round($price, 0));
+        $minFare = (float) $pricing['min_fare'];
+        $price = max($minFare, (int) round($price));
+
+        // Add Luggage Fee (Centralized price per unit)
+        $luggagePrice = $luggageCount * ($pricing['luggage_unit_price'] ?? 500);
+        $price += $luggagePrice;
 
         return response()->json([
             'price' => $price,
@@ -131,9 +100,11 @@ class TripsController extends Controller
             'dropoff.lat' => ['required', 'numeric', 'between:-90,90'],
             'dropoff.lng' => ['required', 'numeric', 'between:-180,180'],
             'vehicle_type' => ['nullable', 'string', 'in:standard,vip'],
+            'luggage_count' => ['nullable', 'integer', 'min:0', 'max:3'],
         ]);
 
         $vehicleType = $request->input('vehicle_type', 'standard');
+        $luggageCount = (int) $request->input('luggage_count', 0);
 
         $pickLat = (float) $request->input('pickup.lat');
         $pickLng = (float) $request->input('pickup.lng');
@@ -170,80 +141,45 @@ class TripsController extends Controller
         $duration = (float) ($route['duration'] ?? 0);   // en secondes
         $geometry = $route['geometry'] ?? null;
 
-        $km = $distance / 1000.0;
-        $min = $duration / 60.0;
-        $pricing = Cache::remember('pricing.config', 60, function () {
-            $setting = PricingSetting::query()->first();
+        $km = (double) ($distance / 1000.0);
+        $pricing = $this->getPricingConfig();
 
-            if (!$setting) {
-                return [
-                    'base_fare' => 500,
-                    'per_km' => 250,
-                    'min_fare' => 1000,
-                    'peak_hours' => ['enabled' => false, 'multiplier' => 1.0, 'start_time' => '17:00', 'end_time' => '20:00'],
-                    'weather' => ['enabled' => false, 'multiplier' => 1.0],
-                    'night' => ['multiplier' => 1.0, 'start_time' => '22:00', 'end_time' => '06:00'],
-                ];
-            }
-
-            return [
-                'base_fare' => (int) $setting->base_fare,
-                'per_km' => (int) $setting->per_km,
-                'min_fare' => (int) $setting->min_fare,
-                'peak_hours' => [
-                    'enabled' => (bool) $setting->peak_hours_enabled,
-                    'multiplier' => (float) $setting->peak_hours_multiplier,
-                    'start_time' => substr((string) $setting->peak_hours_start_time, 0, 5),
-                    'end_time' => substr((string) $setting->peak_hours_end_time, 0, 5),
-                ],
-                'weather' => [
-                    'enabled' => (bool) $setting->weather_mode_enabled,
-                    'multiplier' => (float) $setting->weather_multiplier,
-                ],
-                'night' => [
-                    'multiplier' => (float) $setting->night_multiplier,
-                    'start_time' => substr((string) $setting->night_start_time, 0, 5),
-                    'end_time' => substr((string) $setting->night_end_time, 0, 5),
-                ],
-            ];
-        });
-
-        $base = (float) ($pricing['base_fare'] ?? 500);
-        $perKm = (float) ($pricing['per_km'] ?? 250);
+        $base = (float) $pricing['base_fare'];
+        $perKm = (float) $pricing['per_km'];
         $price = $base + ($perKm * $km);
 
-        // Multiplicateur VIP
+        // VIP Multiplier
         if ($vehicleType === 'vip') {
             $price *= 1.5;
         }
 
-        // Multiplicateur Heures de Pointe
-        $peak = $pricing['peak_hours'] ?? null;
-        if (is_array($peak) && !empty($peak['enabled'])) {
-            if ($this->isCurrentlyInTimeRange($peak['start_time'], $peak['end_time'])) {
-                $price *= (float) ($peak['multiplier'] ?? 1.0);
-            }
+        // Peak Hours Multiplier
+        $peak = $pricing['peak_hours'];
+        if ($peak['enabled'] && $this->isCurrentlyInTimeRange($peak['start_time'], $peak['end_time'])) {
+            $price *= (float) $peak['multiplier'];
         }
 
-        // Multiplicateur Météo
-        $weather = $pricing['weather'] ?? null;
-        if (is_array($weather) && !empty($weather['enabled'])) {
-            $price *= (float) ($weather['multiplier'] ?? 1.0);
+        // Weather Multiplier
+        $weather = $pricing['weather'];
+        if ($weather['enabled']) {
+            $price *= (float) $weather['multiplier'];
         }
 
-        // Multiplicateur Nuit
-        $night = $pricing['night'] ?? null;
-        if (is_array($night) && (float) ($night['multiplier'] ?? 1.0) > 1.0) {
-            if ($this->isCurrentlyInTimeRange($night['start_time'], $night['end_time'])) {
-                $price *= (float) $night['multiplier'];
-            }
+        // Night Multiplier
+        $night = $pricing['night'];
+        if ($night['multiplier'] > 1.0 && $this->isCurrentlyInTimeRange($night['start_time'], $night['end_time'])) {
+            $price *= (float) $night['multiplier'];
         }
 
-        $minFare = (float) ($pricing['min_fare'] ?? 1000);
-        $price = max($minFare, (int) round($price, 0));
+        $minFare = (float) $pricing['min_fare'];
+        $price = max($minFare, (int) round($price));
+
+        // Add Luggage Fee
+        $luggagePrice = $luggageCount * ($pricing['luggage_unit_price'] ?? 500);
+        $totalPrice = (int) ($price + $luggagePrice);
 
         return response()->json([
-            'price' => $price,
+            'price' => $totalPrice,
             'currency' => 'XOF',
             'eta_s' => (int) round($duration),
             'distance_m' => (int) round($distance),
@@ -348,6 +284,7 @@ class TripsController extends Controller
             'passenger_phone' => ['nullable', 'string', 'max:255'],
             'vehicle_type' => ['nullable', 'string', 'in:standard,vip'],
             'has_baggage' => ['nullable', 'boolean'],
+            'luggage_count' => ['nullable', 'integer', 'min:0', 'max:5'],
             'payment_method' => ['nullable', 'string', 'in:cash,wallet,card,qr'],
             'service_type' => ['nullable', 'string', 'in:course,livraison,deplacement'],
             'recipient_name' => ['nullable', 'string', 'max:255'],
@@ -404,6 +341,7 @@ class TripsController extends Controller
                 'passenger_phone' => $request->input('passenger_phone'),
                 'vehicle_type' => $request->input('vehicle_type', 'standard'),
                 'has_baggage' => (bool) $request->input('has_baggage', false),
+                'luggage_count' => (int) $request->input('luggage_count', 0),
                 'payment_method' => $request->input('payment_method', 'cash'),
                 'service_type' => $request->input('service_type', 'course'),
                 'recipient_name' => $request->input('recipient_name'),
@@ -415,6 +353,47 @@ class TripsController extends Controller
             ]);
             // True Broadcast: on laisse offered_driver_id à null pour que tous les chauffeurs éligibles voient la course
             broadcast(new RideRequested($ride));
+
+            // Notify nearby drivers
+            try {
+                $radius = (float) config('app.search_radius_km', 10.0);
+                $earthRadiusKm = 6371.0;
+                $distanceFormula = "(
+                    {$earthRadiusKm} * 2 * ASIN(
+                        SQRT(
+                            POWER(SIN(RADIANS({$pickupLat} - users.last_lat) / 2), 2) +
+                            COS(RADIANS({$pickupLat})) * COS(RADIANS(users.last_lat)) *
+                            POWER(SIN(RADIANS({$pickupLng} - users.last_lng) / 2), 2)
+                        )
+                    )
+                )";
+
+                $nearbyDriverTokens = FcmToken::query()
+                    ->join('users', 'users.id', '=', 'fcm_tokens.user_id')
+                    ->join('driver_profiles', 'driver_profiles.user_id', '=', 'users.id')
+                    ->where('users.role', 'driver')
+                    ->where('users.is_online', true)
+                    ->where('users.is_active', true)
+                    ->where('driver_profiles.status', 'approved')
+                    ->whereNotNull('users.last_lat')
+                    ->whereNotNull('users.last_lng')
+                    ->whereRaw("{$distanceFormula} <= ?", [$radius])
+                    ->pluck('token')
+                    ->unique()
+                    ->toArray();
+
+                if (!empty($nearbyDriverTokens)) {
+                    $fcm = app(FcmService::class);
+                    $fcm->sendToTokens(
+                        $nearbyDriverTokens,
+                        "Nouvelle commande !",
+                        "Une course à {$ride->fare_amount} FCFA est disponible à proximité.",
+                        ['ride_id' => (string) $ride->id, 'type' => 'new_ride']
+                    );
+                }
+            } catch (\Exception $e) {
+                \Log::error("FCM Driver Notification Error: " . $e->getMessage());
+            }
 
             return response()->json([
                 'id' => $ride->id,
@@ -475,6 +454,22 @@ class TripsController extends Controller
 
         broadcast(new RideAccepted($ride->load('driver')));
 
+        // Notify passenger
+        try {
+            $passenger = $ride->rider;
+            if ($passenger) {
+                $fcm = app(FcmService::class);
+                $fcm->sendToUser(
+                    $passenger,
+                    "Course acceptée !",
+                    "Votre chauffeur " . $driver->name . " est en route.",
+                    ['ride_id' => (string) $ride->id, 'type' => 'ride_accepted']
+                );
+            }
+        } catch (\Exception $e) {
+            \Log::error("FCM Ride Accepted Notification Error: " . $e->getMessage());
+        }
+
         return response()->json(['ok' => true, 'ride_id' => $ride->id, 'status' => $ride->status]);
     }
 
@@ -534,6 +529,22 @@ class TripsController extends Controller
 
         broadcast(new RideArrived($ride));
 
+        // Notify passenger
+        try {
+            $passenger = $ride->rider;
+            if ($passenger) {
+                $fcm = app(FcmService::class);
+                $fcm->sendToUser(
+                    $passenger,
+                    "Votre chauffeur est arrivé !",
+                    "Le chauffeur est au point de prise en charge.",
+                    ['ride_id' => (string) $ride->id, 'type' => 'driver_arrived']
+                );
+            }
+        } catch (\Exception $e) {
+            \Log::error("FCM Passenger Notification Error: " . $e->getMessage());
+        }
+
         return response()->json(['ok' => true, 'arrived_at' => $ride->arrived_at]);
     }
 
@@ -550,6 +561,22 @@ class TripsController extends Controller
         $ride->save();
 
         broadcast(new RideStarted($ride));
+
+        // Notify passenger
+        try {
+            $passenger = $ride->rider;
+            if ($passenger) {
+                $fcm = app(FcmService::class);
+                $fcm->sendToUser(
+                    $passenger,
+                    "C'est parti !",
+                    "Votre course a commencé. Bon voyage !",
+                    ['ride_id' => (string) $ride->id, 'type' => 'ride_started']
+                );
+            }
+        } catch (\Exception $e) {
+            \Log::error("FCM Ride Started Notification Error: " . $e->getMessage());
+        }
 
         return response()->json(['ok' => true, 'ride_id' => $ride->id, 'status' => $ride->status]);
     }
@@ -583,6 +610,7 @@ class TripsController extends Controller
                         'platform_pct' => (int) ($s?->platform_commission_pct ?? 70),
                         'driver_pct' => (int) ($s?->driver_commission_pct ?? 20),
                         'maintenance_pct' => (int) ($s?->maintenance_commission_pct ?? 10),
+                        'luggage_unit_price' => (int) ($s?->luggage_unit_price ?? 500),
                         'stop_rate_per_min' => (int) ($s?->stop_rate_per_min ?? 5),
                         'weather' => [
                             'enabled' => (bool) ($s?->weather_mode_enabled ?? false),
@@ -631,8 +659,17 @@ class TripsController extends Controller
                 $stopPrice = (int) ($stopMinutes * $pricing['stop_rate_per_min']);
 
                 // Final fare
-                $fare = $trajectoryPrice + $stopPrice;
+                $luggageCount = (int) ($ride->luggage_count ?? ($ride->has_baggage ? 1 : 0));
+                $luggageFee = $luggageCount * ($pricing['luggage_unit_price'] ?? 500);
+                $fare = $trajectoryPrice + $stopPrice + $luggageFee;
                 $ride->fare_amount = $fare;
+                $ride->breakdown = [
+                    'base_fare' => $pricing['base_fare'],
+                    'trajectory_fare' => $trajectoryPrice,
+                    'stop_fare' => $stopPrice,
+                    'luggage_fare' => $luggageFee,
+                    'total_fare' => $fare,
+                ];
 
                 // 3. Calculate Commissions
                 $platformPct = $pricing['platform_pct'];
@@ -675,6 +712,7 @@ class TripsController extends Controller
                 if ($pm === 'cash') {
                     // Cash: Driver collected 100% Fare.
                     // We must DEBIT the Commission (Platform + Maintenance).
+                    $ride->payment_status = 'completed';
                     $commissionToDeduct = $ride->commission_amount; // Platform + Maint
                     $after = $before - $commissionToDeduct;
 
@@ -689,21 +727,9 @@ class TripsController extends Controller
                         'created_at' => now(),
                     ]);
                 } elseif ($pm === 'wallet') {
-                    // Wallet: System collected 100% Fare.
-                    // We CREDIT Driver Earnings.
-                    $earningsToCredit = $ride->driver_earnings_amount;
-                    $after = $before + $earningsToCredit;
-
-                    DB::table('wallet_transactions')->insert([
-                        'wallet_id' => $wallet->id,
-                        'type' => 'credit',
-                        'source' => 'ride_earnings',
-                        'amount' => $earningsToCredit,
-                        'balance_before' => $before,
-                        'balance_after' => $after,
-                        'meta' => json_encode(['ride_id' => $ride->id, 'desc' => 'Earnings for wallet ride']),
-                        'created_at' => now(),
-                    ]);
+                    // Wallet: System collects money. 
+                    // We wait for Passenger to confirm payment in their app via /passenger/rides/{id}/pay
+                    // No immediate balance change for driver.
                 } elseif ($pm === 'qr' || $pm === 'card') {
                     // Moneroo Payment Flow
                     // We do NOT credit driver yet. We wait for Webhook.
@@ -758,6 +784,22 @@ class TripsController extends Controller
             // This ensures the passenger only receives the event when DB is actually updated
             broadcast(new RideCompleted($result['ride']));
 
+            // Notify passenger via FCM
+            try {
+                $passenger = $result['ride']->rider;
+                if ($passenger) {
+                    $fcm = app(FcmService::class);
+                    $fcm->sendToUser(
+                        $passenger,
+                        "Course terminée !",
+                        "Merci d'avoir voyagé avec TIC. Tarif: " . number_format($result['ride']->fare_amount, 0, ',', ' ') . " FCFA",
+                        ['ride_id' => (string) $result['ride']->id, 'type' => 'ride_completed']
+                    );
+                }
+            } catch (\Exception $e) {
+                \Log::error("FCM Ride Completed Notification Error: " . $e->getMessage());
+            }
+
             \Illuminate\Support\Facades\Log::info("RideCompleted broadcast sent", [
                 'ride_id' => $result['ride']->id,
                 'rider_id' => $result['ride']->rider_id,
@@ -811,6 +853,22 @@ class TripsController extends Controller
 
         broadcast(new RideCancelled($ride->fresh(['driver', 'rider']), 'driver', $driver));
 
+        // Notify passenger
+        try {
+            $passenger = $ride->rider;
+            if ($passenger) {
+                $fcm = app(FcmService::class);
+                $fcm->sendToUser(
+                    $passenger,
+                    "Course annulée",
+                    "Le chauffeur a annulé la course.",
+                    ['ride_id' => (string) $ride->id, 'type' => 'ride_cancelled']
+                );
+            }
+        } catch (\Exception $e) {
+            \Log::error("FCM Ride Cancelled By Driver Error: " . $e->getMessage());
+        }
+
         return response()->json(['ok' => true, 'ride_id' => $ride->id, 'status' => $ride->status]);
     }
 
@@ -832,6 +890,22 @@ class TripsController extends Controller
         $ride->save();
 
         broadcast(new RideCancelled($ride, 'passenger', $user));
+
+        // Notify driver
+        try {
+            $driver = $ride->driver;
+            if ($driver) {
+                $fcm = app(FcmService::class);
+                $fcm->sendToUser(
+                    $driver,
+                    "Course annulée",
+                    "Le passager a annulé la course.",
+                    ['ride_id' => (string) $ride->id, 'type' => 'ride_cancelled']
+                );
+            }
+        } catch (\Exception $e) {
+            \Log::error("FCM Ride Cancelled By Passenger Error: " . $e->getMessage());
+        }
 
         return response()->json(['ok' => true, 'ride_id' => $ride->id, 'status' => $ride->status]);
     }
@@ -911,8 +985,18 @@ class TripsController extends Controller
         }
 
         $ride = Ride::where('rider_id', $user->id)
-            ->whereIn('status', ['requested', 'accepted', 'arrived', 'started', 'ongoing'])
-            ->with(['driver.driverProfile'])
+            ->where(function ($q) {
+                $q->whereIn('status', ['requested', 'accepted', 'arrived', 'started', 'ongoing'])
+                    ->orWhere(function ($sq) {
+                        $sq->where('status', 'completed')
+                            ->where('completed_at', '>=', now()->subMinutes(60))
+                            ->where(function ($sq2) {
+                                $sq2->where('payment_status', '!=', 'completed')
+                                    ->orWhereDoesntHave('rating');
+                            });
+                    });
+            })
+            ->with(['driver.driverProfile', 'rating'])
             ->orderByDesc('id')
             ->first();
 
@@ -1194,38 +1278,44 @@ class TripsController extends Controller
             )
         )";
 
-        $ride = Ride::query()
+        $rides = Ride::query()
             ->where('status', 'requested')
             ->whereNotNull('pickup_lat')
             ->whereNotNull('pickup_lng')
             ->whereRaw("{$distanceFormula} <= ?", [$searchRadiusKm]);
 
         // Exclure les courses déjà déclinées par ce chauffeur
-        $ride->where(function ($q) use ($driver) {
+        $rides->where(function ($q) use ($driver) {
             $q->whereNull('declined_driver_ids')
                 ->orWhereRaw("NOT JSON_CONTAINS(declined_driver_ids, CAST(? AS JSON))", [json_encode($driver->id)]);
         });
 
-        $ride = $ride->orderByDesc('id')->first();
+        $rides = $rides->orderByDesc('id')->limit(5)->get();
 
-        if (!$ride) {
-            return response()->json(null, 204);
+        if ($rides->isEmpty()) {
+            return response()->json([], 200);
         }
 
-        $passenger = $ride->rider_id ? User::find($ride->rider_id) : null;
+        $formattedRides = $rides->map(function ($ride) {
+            $passenger = $ride->rider_id ? User::find($ride->rider_id) : null;
+            return [
+                'id' => $ride->id,
+                'pickup_address' => $ride->pickup_address ?? null,
+                'dropoff_address' => $ride->dropoff_address ?? null,
+                'fare_amount' => (int) ($ride->fare_amount ?? 0),
+                'status' => $ride->status,
+                'pickup_lat' => $ride->pickup_lat,
+                'pickup_lng' => $ride->pickup_lng,
+                'dropoff_lat' => $ride->dropoff_lat,
+                'dropoff_lng' => $ride->dropoff_lng,
+                'rider' => $this->formatPassenger($passenger),
+                'vehicle_type' => $ride->vehicle_type,
+                'has_baggage' => (bool) $ride->has_baggage,
+                'service_type' => $ride->service_type,
+            ];
+        });
 
-        return response()->json([
-            'id' => $ride->id,
-            'pickup_address' => $ride->pickup_address ?? null,
-            'dropoff_address' => $ride->dropoff_address ?? null,
-            'fare_amount' => (int) ($ride->fare_amount ?? 0),
-            'status' => $ride->status,
-            'pickup_lat' => $ride->pickup_lat,
-            'pickup_lng' => $ride->pickup_lng,
-            'dropoff_lat' => $ride->dropoff_lat,
-            'dropoff_lng' => $ride->dropoff_lng,
-            'rider' => $this->formatPassenger($passenger),
-        ]);
+        return response()->json($formattedRides);
     }
 
     public function updateDriverLocation(Request $request)
@@ -1381,6 +1471,50 @@ class TripsController extends Controller
         $ids = array_filter(array_map(fn($id) => $id ? (int) $id : null, $ids));
 
         return array_values(array_unique($ids));
+    }
+
+    public function nearbyDrivers(Request $request)
+    {
+        $data = $request->validate([
+            'lat' => ['required', 'numeric', 'between:-90,90'],
+            'lng' => ['required', 'numeric', 'between:-180,180'],
+            'radius' => ['nullable', 'numeric', 'min:1', 'max:50'],
+        ]);
+
+        $lat = (float) $data['lat'];
+        $lng = (float) $data['lng'];
+        $radius = (float) ($data['radius'] ?? config('app.search_radius_km', 10.0));
+
+        $earthRadiusKm = 6371.0;
+        $distanceFormula = "(
+            {$earthRadiusKm} * 2 * ASIN(
+                SQRT(
+                    POWER(SIN(RADIANS({$lat} - users.last_lat) / 2), 2) +
+                    COS(RADIANS({$lat})) * COS(RADIANS(users.last_lat)) *
+                    POWER(SIN(RADIANS({$lng} - users.last_lng) / 2), 2)
+                )
+            )
+        )";
+
+        $drivers = User::query()
+            ->where('role', 'driver')
+            ->where('is_online', true)
+            ->where('is_active', true)
+            ->join('driver_profiles', 'driver_profiles.user_id', '=', 'users.id')
+            ->where('driver_profiles.status', 'approved')
+            ->whereNotNull('users.last_lat')
+            ->whereNotNull('users.last_lng')
+            ->whereRaw("{$distanceFormula} <= ?", [$radius])
+            ->select('users.id', 'users.last_lat as lat', 'users.last_lng as lng', 'users.last_location_at')
+            ->selectRaw("{$distanceFormula} as distance_km")
+            ->orderByRaw("{$distanceFormula} ASC")
+            ->limit(10)
+            ->get();
+
+        return response()->json([
+            'drivers' => $drivers,
+            'count' => $drivers->count(),
+        ]);
     }
 
     protected function findDriverCandidate(float $pickupLat, float $pickupLng, array $excludeIds = []): ?User
@@ -1562,6 +1696,7 @@ class TripsController extends Controller
                 'base_fare' => (int) ($s?->base_fare ?? 500),
                 'per_km' => (int) ($s?->per_km ?? 250),
                 'min_fare' => (int) ($s?->min_fare ?? 1000),
+                'luggage_unit_price' => (int) ($s?->luggage_unit_price ?? 500),
                 'platform_pct' => (int) ($s?->platform_commission_pct ?? 70),
                 'driver_pct' => (int) ($s?->driver_commission_pct ?? 20),
                 'maintenance_pct' => (int) ($s?->maintenance_commission_pct ?? 10),
@@ -1636,19 +1771,25 @@ class TripsController extends Controller
         if ($ride->arrived_at) {
             $endWait = $ride->started_at ?? now();
             $waitSeconds = (int) $endWait->diffInSeconds($ride->arrived_at, true);
-            $graceSeconds = $pricing['pickup_grace_period_m'] * 60;
+            $graceSeconds = ($pricing['pickup_grace_period_m'] ?? 5) * 60;
 
             if ($waitSeconds > $graceSeconds) {
                 $pickupWaitMinutes = floor(($waitSeconds - $graceSeconds) / 60.0);
-                $pickupWaitingPrice = (int) ($pickupWaitMinutes * $pricing['pickup_waiting_rate_per_min']);
+                $pickupWaitingPrice = (int) ($pickupWaitMinutes * ($pricing['pickup_waiting_rate_per_min'] ?? 10));
             }
         }
 
         $totalFare = $trajectoryPrice + $stopPrice + $pickupWaitingPrice;
 
+        // 4. Luggage Fee
+        $luggageCount = (int) ($ride->luggage_count ?? ($ride->has_baggage ? 1 : 0));
+        $luggagePrice = $luggageCount * ($pricing['luggage_unit_price'] ?? 500);
+        $totalFare += $luggagePrice;
+
         return [
             'base_fare' => $baseFare,
             'distance_fare' => $distanceFare,
+            'luggage_fare' => $luggagePrice,
             'wait_fare' => $stopPrice + $pickupWaitingPrice,
             'duration_fare' => $stopPrice + $pickupWaitingPrice, // Alias for app compatibility
             'pickup_waiting_fare' => $pickupWaitingPrice,

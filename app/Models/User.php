@@ -32,6 +32,9 @@ class User extends Authenticatable
         'phone_verified_at',
     ];
 
+    /** @var array */
+    protected $appends = ['rating'];
+
     /**
      * The attributes that should be hidden for serialization.
      *
@@ -93,6 +96,39 @@ class User extends Authenticatable
     public function ratings()
     {
         return $this->hasMany(Rating::class, 'driver_id');
+    }
+
+    public function fcmTokens()
+    {
+        return $this->hasMany(FcmToken::class);
+    }
+
+    /**
+     * Accessors
+     */
+    public function getPhotoAttribute($value)
+    {
+        if (!$value) {
+            return null;
+        }
+
+        // Si c'est déjà une URL complète (ex: gravatar ou legacy), on la laisse
+        if (str_starts_with($value, 'http')) {
+            // Optionnel: on pourrait essayer de corriger les URLs localhost ici si on est en prod
+            // mais il vaut mieux stocker des chemins relatifs.
+            return $value;
+        }
+
+        return asset('storage/' . $value);
+    }
+
+    public function getRatingAttribute()
+    {
+        if ($this->role !== 'driver') {
+            return null;
+        }
+
+        return (float) ($this->ratings()->avg('stars') ?? 0.0);
     }
 }
 

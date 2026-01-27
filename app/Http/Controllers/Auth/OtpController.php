@@ -221,7 +221,7 @@ class OtpController extends Controller
 
         if ($request->hasFile('photo')) {
             $path = $request->file('photo')->store('profiles', 'public');
-            $user->photo = asset('storage/' . $path);
+            $user->photo = $path; // On stocke juste le chemin relatif
         } elseif (array_key_exists('photo', $data) && $data['photo'] !== null && $data['photo'] !== '') {
             $user->photo = $data['photo'];
         }

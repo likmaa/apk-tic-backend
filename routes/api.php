@@ -4,9 +4,32 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\OtpController;
 use App\Http\Controllers\TripsController;
+use App\Http\Controllers\Admin\AdminAuthController;
+use App\Http\Controllers\Admin\DriverModerationController;
+use App\Http\Controllers\Admin\UsersController;
+use App\Http\Controllers\Admin\PricingController;
+use App\Http\Controllers\Admin\RidesController;
+use App\Http\Controllers\Admin\FinanceController;
+use App\Http\Controllers\Admin\NotificationsController as AdminNotificationsController;
+use App\Http\Controllers\Admin\ModerationController;
+use App\Http\Controllers\Admin\StatsController;
+use App\Http\Controllers\GeocodingController;
+use App\Http\Controllers\VoiceController;
+use App\Http\Controllers\RatingsController;
+use App\Http\Controllers\PassengerAddressController;
+use App\Http\Controllers\PassengerLineController;
+use App\Http\Controllers\WalletController;
+use App\Http\Controllers\FcmTokenController;
+use App\Http\Controllers\Api\Admin\NotificationController;
+use App\Http\Controllers\DriverProfileController;
+use App\Http\Controllers\WithdrawController;
+use App\Http\Controllers\Admin\PromotionController;
+use App\Http\Controllers\Api\KkiapayWebhookController;
 
 // Health check endpoint (public)
 Route::get('/health', fn() => response()->json(['status' => 'ok', 'timestamp' => now()]));
+Route::get('/promotions', [PromotionController::class, 'indexPublic']);
+Route::post('/webhooks/kkiapay', [KkiapayWebhookController::class, 'handle']);
 
 Route::prefix('auth')->group(function () {
     Route::post('/request-otp', [OtpController::class, 'requestOtp'])->middleware('throttle:otp');
@@ -16,27 +39,14 @@ Route::prefix('auth')->group(function () {
         Route::post('/logout', [OtpController::class, 'logout']);
         Route::get('/me', [OtpController::class, 'me']);
         Route::put('/profile', [OtpController::class, 'updateProfile']);
+
+        // FCM Tokens
+        Route::post('/fcm/register', [FcmTokenController::class, 'register']);
+        Route::post('/fcm/unregister', [FcmTokenController::class, 'unregister']);
     });
 });
 
 // Role-based route groups (scaffolding)
-use App\Http\Controllers\Admin\AdminAuthController;
-use App\Http\Controllers\Admin\DriverModerationController;
-use App\Http\Controllers\Admin\UsersController;
-use App\Http\Controllers\Admin\PricingController;
-use App\Http\Controllers\Admin\RidesController;
-use App\Http\Controllers\Admin\FinanceController;
-use App\Http\Controllers\Admin\NotificationsController;
-use App\Http\Controllers\Admin\ModerationController;
-use App\Http\Controllers\Admin\StatsController;
-use App\Http\Controllers\GeocodingController;
-use App\Http\Controllers\VoiceController;
-use App\Http\Controllers\RatingsController;
-use App\Http\Controllers\PassengerAddressController;
-use App\Http\Controllers\DriverProfileController;
-use App\Http\Controllers\WalletController;
-use App\Http\Controllers\PassengerLineController;
-
 Route::prefix('admin')->group(function () {
     // Admin authentication (email/phone + password)
     Route::post('/login', [AdminAuthController::class, 'login']);
@@ -80,11 +90,11 @@ Route::prefix('admin')->group(function () {
         Route::get('/finance/transactions', [FinanceController::class, 'transactions']);
 
         // Wallet admin helpers
-        Route::post('/users/{id}/wallet/reset', [\App\Http\Controllers\WalletController::class, 'adminReset']);
+        Route::post('/users/{id}/wallet/reset', [WalletController::class, 'adminReset']);
 
         // Notifications
-        Route::post('/notifications/send', [\App\Http\Controllers\Api\Admin\NotificationController::class, 'store']);
-        Route::get('/notifications/history', [\App\Http\Controllers\Api\Admin\NotificationController::class, 'index']);
+        Route::post('/notifications/send', [NotificationController::class, 'store']);
+        Route::get('/notifications/history', [NotificationController::class, 'index']);
 
         // Moderation (accounts, reports)
         Route::get('/moderation/queue', [ModerationController::class, 'queue']);
@@ -109,6 +119,12 @@ Route::prefix('admin')->group(function () {
         Route::get('/wallets/{walletId}/transactions', [\App\Http\Controllers\Admin\WalletController::class, 'transactions']);
         Route::post('/drivers/{driverId}/block', [\App\Http\Controllers\Admin\WalletController::class, 'blockDriver']);
         Route::post('/drivers/{driverId}/unblock', [\App\Http\Controllers\Admin\WalletController::class, 'unblockDriver']);
+
+        // Promotions
+        Route::get('/promotions', [PromotionController::class, 'index']);
+        Route::post('/promotions', [PromotionController::class, 'store']);
+        Route::post('/promotions/{id}', [PromotionController::class, 'update']); // Using POST for update to support FormData image upload
+        Route::delete('/promotions/{id}', [PromotionController::class, 'destroy']);
     });
 
     Route::middleware(['auth:sanctum', 'role:developer'])->group(function () {
@@ -124,10 +140,10 @@ Route::prefix('admin')->group(function () {
 
     // Moderation actions (admin + developer)
     Route::middleware(['auth:sanctum', 'role:admin,developer'])->group(function () {
-        Route::post('/moderation/{userId}/suspend', [\App\Http\Controllers\Admin\ModerationController::class, 'suspend']);
-        Route::post('/moderation/{userId}/ban', [\App\Http\Controllers\Admin\ModerationController::class, 'ban']);
-        Route::post('/moderation/{userId}/warn', [\App\Http\Controllers\Admin\ModerationController::class, 'warn']);
-        Route::post('/moderation/{userId}/reinstate', [\App\Http\Controllers\Admin\ModerationController::class, 'reinstate']);
+        Route::post('/moderation/{userId}/suspend', [ModerationController::class, 'suspend']);
+        Route::post('/moderation/{userId}/ban', [ModerationController::class, 'ban']);
+        Route::post('/moderation/{userId}/warn', [ModerationController::class, 'warn']);
+        Route::post('/moderation/{userId}/reinstate', [ModerationController::class, 'reinstate']);
     });
 });
 
@@ -154,7 +170,7 @@ Route::middleware(['auth:sanctum', 'role:driver', 'driver.approved'])->prefix('d
     // Portefeuille chauffeur (même contrôleur que passager, basé sur user_id)
     Route::get('/wallet', [WalletController::class, 'show']);
     Route::get('/wallet/transactions/today', [WalletController::class, 'todayTransactions']);
-    Route::post('/wallet/withdraw', [\App\Http\Controllers\WithdrawController::class, 'store']);
+    Route::post('/wallet/withdraw', [WithdrawController::class, 'store']);
     Route::get('/next-offer', [TripsController::class, 'driverNextOffer']);
     Route::post('/trips/{id}/accept', [TripsController::class, 'accept']);
     Route::post('/trips/{id}/decline', [TripsController::class, 'decline']);
@@ -171,6 +187,7 @@ Route::middleware(['auth:sanctum', 'role:passenger'])->prefix('passenger')->grou
     Route::get('/rides', [TripsController::class, 'passengerRides']);
     Route::get('/rides/current', [TripsController::class, 'currentPassengerRide']);
     Route::get('/rides/active-count', [TripsController::class, 'activeRidesCount']);
+    Route::get('/drivers/nearby', [TripsController::class, 'nearbyDrivers']);
     Route::get('/rides/{id}', [TripsController::class, 'passengerRideShow']);
     Route::get('/rides/{id}/wait-assignment', [TripsController::class, 'passengerRideWaitAssignment']);
     Route::get('/addresses', [PassengerAddressController::class, 'index']);

@@ -4,10 +4,10 @@ namespace App\Events;
 
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Queue\SerializesModels;
 
-class DriverLocationUpdated implements ShouldBroadcast
+class DriverLocationUpdated implements ShouldBroadcastNow
 {
     use InteractsWithSockets;
     use SerializesModels;
@@ -21,7 +21,7 @@ class DriverLocationUpdated implements ShouldBroadcast
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('ride.'.$this->rideId),
+            new PrivateChannel('ride.' . $this->rideId),
         ];
     }
 

@@ -37,13 +37,24 @@ return [
 
     'twilio' => [
         'account_sid' => env('TWILIO_ACCOUNT_SID'),
-        'auth_token'  => env('TWILIO_AUTH_TOKEN'),
-        'verify_sid'  => env('TWILIO_VERIFY_SID'),
+        'auth_token' => env('TWILIO_AUTH_TOKEN'),
+        'verify_sid' => env('TWILIO_VERIFY_SID'),
         'whatsapp_from' => env('TWILIO_WHATSAPP_FROM'),
     ],
 
     'mapbox' => [
         'token' => env('MAPBOX_TOKEN'),
+    ],
+
+    'fcm' => [
+        'key' => env('FCM_SERVER_KEY'),
+    ],
+
+    'kkiapay' => [
+        'public_key' => env('KKIAPAY_PUBLIC_KEY'),
+        'private_key' => env('KKIAPAY_PRIVATE_KEY'),
+        'secret' => env('KKIAPAY_SECRET'),
+        'sandbox' => env('KKIAPAY_SANDBOX', true),
     ],
 
 ];
