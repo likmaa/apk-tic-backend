@@ -10,14 +10,14 @@ return new class extends Migration {
      */
     public function up(): void
     {
-        Schema::create('promotions', function (Blueprint $軟) {
-            $軟->id();
-            $軟->string('title');
-            $軟->text('description')->nullable();
-            $軟->string('image_url');
-            $軟->string('link_url')->nullable();
-            $軟->boolean('is_active')->default(true);
-            $軟->timestamps();
+        Schema::create('promotions', function (Blueprint $table) {
+            $table->id();
+            $table->string('title');
+            $table->text('description')->nullable();
+            $table->string('image_url');
+            $table->string('link_url')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
         });
     }
 
