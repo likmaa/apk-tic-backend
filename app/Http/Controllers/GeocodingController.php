@@ -41,6 +41,21 @@ class GeocodingController extends Controller
             // On demande plus de résultats en interne (20 au lieu de 8) pour avoir plus de choix lors du tri par distance
             $internalLimit = 20;
 
+            $combined = [];
+
+            // 0. Recherche locale dans les quartiers de la base de données (prioritaire)
+            $localNeighborhoods = \App\Models\Neighborhood::search($query, 10);
+            foreach ($localNeighborhoods as $neighborhood) {
+                $combined[] = [
+                    'place_id' => 'local_' . $neighborhood->id,
+                    'display_name' => $neighborhood->name . ' (' . $neighborhood->arrondissement . ', ' . $neighborhood->city . ')',
+                    'lat' => (string) ($neighborhood->lat ?? '6.4969'),
+                    'lon' => (string) ($neighborhood->lng ?? '2.6283'),
+                    'source' => 'local',
+                    'priority' => 0, // Highest priority
+                ];
+            }
+
             // 1. Appel Mapbox
             $mapboxUrl = "https://api.mapbox.com/geocoding/v5/mapbox.places/" . urlencode($query) . ".json";
             $mapboxParams = [
@@ -69,8 +84,6 @@ class GeocodingController extends Controller
                 $pool->as('mapbox')->timeout(4)->get($mapboxUrl, $mapboxParams),
                 $pool->as('nominatim')->timeout(4)->withHeaders(['User-Agent' => 'PortoBackend/1.0'])->get($nominatimUrl, $nominatimParams),
             ]);
-
-            $combined = [];
 
             // Traitement Mapbox
             if ($responses['mapbox']->ok()) {
@@ -136,6 +149,13 @@ class GeocodingController extends Controller
 
             if ($userLat && $userLon) {
                 usort($unique, function ($a, $b) {
+                    // First: prioritize local results (priority = 0)
+                    $aPriority = $a['priority'] ?? 1;
+                    $bPriority = $b['priority'] ?? 1;
+                    if ($aPriority !== $bPriority) {
+                        return $aPriority - $bPriority;
+                    }
+                    // Then: sort by distance
                     if ($a['distance'] === $b['distance'])
                         return 0;
                     if ($a['distance'] === null)
@@ -143,6 +163,11 @@ class GeocodingController extends Controller
                     if ($b['distance'] === null)
                         return -1;
                     return ($a['distance'] < $b['distance']) ? -1 : 1;
+                });
+            } else {
+                // No user coordinates: just sort by priority
+                usort($unique, function ($a, $b) {
+                    return ($a['priority'] ?? 1) - ($b['priority'] ?? 1);
                 });
             }
 
