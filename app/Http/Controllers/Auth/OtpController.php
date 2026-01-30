@@ -32,7 +32,7 @@ class OtpController extends Controller
         $forceNew = $data['force_new'] ?? false;
 
         // Bypass pour Google Play Console
-        if ($phone === '+22900000000') {
+        if ($phone === '+229000000') {
             return response()->json([
                 'status' => 'otp_sent',
                 'message' => 'OTP envoyé (Mode Test Google).',
