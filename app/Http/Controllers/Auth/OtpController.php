@@ -31,6 +31,15 @@ class OtpController extends Controller
         $phone = Phone::normalize($data['phone']); // ex: +229XXXXXXXX
         $forceNew = $data['force_new'] ?? false;
 
+        // Bypass pour Google Play Console
+        if ($phone === '+22900000000') {
+            return response()->json([
+                'status' => 'otp_sent',
+                'message' => 'OTP envoyé (Mode Test Google).',
+                'otp_key' => 'google-test-key'
+            ]);
+        }
+
 
         try {
             // Pour l'application driver, on force TOUJOURS l'envoi d'OTP
@@ -78,8 +87,14 @@ class OtpController extends Controller
 
         $phone = Phone::normalize($data['phone']);
 
-        // Vérifier l'OTP auprès de KYA SMS en utilisant la clé retournée par /otp/create
-        $verifyResponse = $this->kyaSms->verifyOtp($data['otp_key'], $data['code']);
+        $isGoogleTest = ($phone === '+22900000000' && $data['code'] === '123456');
+
+        if ($isGoogleTest) {
+            $verifyResponse = ['reason' => 'success', 'status' => 200, 'msg' => 'checked'];
+        } else {
+            // Vérifier l'OTP auprès de KYA SMS en utilisant la clé retournée par /otp/create
+            $verifyResponse = $this->kyaSms->verifyOtp($data['otp_key'], $data['code']);
+        }
 
         // Doc KYA: { "reason": "success", "status": 200, "msg": "checked" }
         $reason = $verifyResponse['reason'] ?? null;
