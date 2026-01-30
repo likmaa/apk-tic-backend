@@ -87,7 +87,7 @@ class OtpController extends Controller
 
         $phone = Phone::normalize($data['phone']);
 
-        $isGoogleTest = ($phone === '+22900000000' && $data['code'] === '123456');
+        $isGoogleTest = ($phone === '+229000000' && $data['code'] === '123456');
 
         if ($isGoogleTest) {
             $verifyResponse = ['reason' => 'success', 'status' => 200, 'msg' => 'checked'];
