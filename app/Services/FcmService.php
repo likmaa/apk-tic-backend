@@ -10,15 +10,23 @@ use Illuminate\Support\Facades\Cache;
 class FcmService
 {
     protected $projectId;
-    protected $serviceAccountPath;
+    protected $serviceAccountConfig;
 
     public function __construct()
     {
-        $this->serviceAccountPath = storage_path('app/firebase-service-account.json');
-
-        if (file_exists($this->serviceAccountPath)) {
-            $config = json_decode(file_get_contents($this->serviceAccountPath), true);
-            $this->projectId = $config['project_id'] ?? null;
+        // Try to load from environment variable first (base64 encoded JSON)
+        $envConfig = env('FIREBASE_SERVICE_ACCOUNT_JSON');
+        if ($envConfig) {
+            $decoded = base64_decode($envConfig);
+            $this->serviceAccountConfig = json_decode($decoded, true);
+            $this->projectId = $this->serviceAccountConfig['project_id'] ?? null;
+        } else {
+            // Fallback to file
+            $serviceAccountPath = storage_path('app/firebase-service-account.json');
+            if (file_exists($serviceAccountPath)) {
+                $this->serviceAccountConfig = json_decode(file_get_contents($serviceAccountPath), true);
+                $this->projectId = $this->serviceAccountConfig['project_id'] ?? null;
+            }
         }
     }
 
@@ -103,11 +111,11 @@ class FcmService
     protected function getAccessToken()
     {
         return Cache::remember('fcm_access_token', 3500, function () {
-            if (!file_exists($this->serviceAccountPath)) {
+            if (!$this->serviceAccountConfig) {
                 return null;
             }
 
-            $config = json_decode(file_get_contents($this->serviceAccountPath), true);
+            $config = $this->serviceAccountConfig;
             $now = time();
 
             $header = json_encode(['alg' => 'RS256', 'typ' => 'JWT']);
