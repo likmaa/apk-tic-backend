@@ -130,8 +130,11 @@ class FcmService
             $base64UrlHeader = $this->base64UrlEncode($header);
             $base64UrlPayload = $this->base64UrlEncode($payload);
 
+            // Fix escaped newlines in private key (JSON stores \\n but openssl needs actual newlines)
+            $privateKey = str_replace('\\n', "\n", $config['private_key']);
+
             $signature = '';
-            openssl_sign($base64UrlHeader . "." . $base64UrlPayload, $signature, $config['private_key'], 'sha256WithRSAEncryption');
+            openssl_sign($base64UrlHeader . "." . $base64UrlPayload, $signature, $privateKey, 'sha256WithRSAEncryption');
             $base64UrlSignature = $this->base64UrlEncode($signature);
 
             $jwt = $base64UrlHeader . "." . $base64UrlPayload . "." . $base64UrlSignature;
