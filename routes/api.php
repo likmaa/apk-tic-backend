@@ -81,7 +81,9 @@ Route::prefix('admin')->group(function () {
 
         // Rides
         Route::get('/rides', [RidesController::class, 'index']);
+        Route::post('/rides', [RidesController::class, 'store']);
         Route::post('/rides/{id}/cancel', [RidesController::class, 'cancel']);
+        Route::post('/rides/{id}/assign', [RidesController::class, 'assign']);
         Route::get('/rides/status-breakdown', [RidesController::class, 'statusBreakdown']);
         Route::get('/passengers/{id}/rides', [RidesController::class, 'byPassenger']);
 

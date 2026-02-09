@@ -7,6 +7,10 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Models\Ride;
 use App\Events\RideCancelled;
+use App\Events\RideRequested;
+use App\Events\RideAccepted;
+use App\Models\User;
+use App\Services\FcmService;
 
 class RidesController extends Controller
 {
@@ -151,8 +155,9 @@ class RidesController extends Controller
 
     public function cancel(Request $request, int $id)
     {
+        // ... (existing code remains SAME)
         \Log::info('Admin::cancel called', ['ride_id' => $id, 'admin_id' => auth()->id()]);
-        
+
         $ride = Ride::findOrFail($id);
 
         if (in_array($ride->status, ['completed', 'cancelled'])) {
@@ -170,5 +175,97 @@ class RidesController extends Controller
         broadcast(new RideCancelled($ride, 'admin', auth()->user()));
 
         return response()->json(['ok' => true, 'message' => 'Course annulée avec succès.']);
+    }
+
+    /**
+     * Crée manuellement une course par l'administrateur.
+     */
+    public function store(Request $request)
+    {
+        $data = $request->validate([
+            'pickup_address' => 'required|string|max:255',
+            'dropoff_address' => 'required|string|max:255',
+            'fare_amount' => 'required|numeric|min:1',
+            'passenger_name' => 'nullable|string|max:255',
+            'passenger_phone' => 'nullable|string|max:255',
+            'vehicle_type' => 'nullable|string|in:standard,vip',
+            'has_baggage' => 'nullable|boolean',
+        ]);
+
+        $ride = Ride::create([
+            'status' => 'requested',
+            'fare_amount' => $data['fare_amount'],
+            'pickup_address' => $data['pickup_address'],
+            'dropoff_address' => $data['dropoff_address'],
+            'passenger_name' => $data['passenger_name'],
+            'passenger_phone' => $data['passenger_phone'],
+            'vehicle_type' => $data['vehicle_type'] ?? 'standard',
+            'has_baggage' => $data['has_baggage'] ?? false,
+            'currency' => 'XOF',
+            'payment_method' => 'cash',
+        ]);
+
+        broadcast(new RideRequested($ride));
+
+        return response()->json([
+            'ok' => true,
+            'ride' => $ride
+        ], 201);
+    }
+
+    /**
+     * Assigne manuellement un chauffeur à une course.
+     */
+    public function assign(Request $request, int $id)
+    {
+        $data = $request->validate([
+            'driver_id' => 'required|exists:users,id',
+        ]);
+
+        $ride = Ride::findOrFail($id);
+        $driver = User::findOrFail($data['driver_id']);
+
+        if (!$driver->isDriver()) {
+            return response()->json(['message' => 'L\'utilisateur n\'est pas un chauffeur.'], 422);
+        }
+
+        if ($ride->status !== 'requested') {
+            return response()->json(['message' => 'La course n\'est plus disponible pour l\'assignation.'], 422);
+        }
+
+        $ride->status = 'accepted';
+        $ride->driver_id = $driver->id;
+        $ride->offered_driver_id = $driver->id;
+        $ride->accepted_at = now();
+        $ride->save();
+
+        broadcast(new RideAccepted($ride->load('driver')));
+
+        // Notification FCM au passager si mobile (ou info dans le canal socket)
+        try {
+            if ($ride->rider_id || $ride->passenger_phone) {
+                $fcm = app(FcmService::class);
+                // Si on a un rider_id, on notifie l'user
+                if ($ride->rider_id) {
+                    $passenger = User::find($ride->rider_id);
+                    if ($passenger) {
+                        $fcm->sendToUser(
+                            $passenger,
+                            "Course assignée !",
+                            "Le support a assigné {$driver->name} pour votre course.",
+                            ['ride_id' => (string) $ride->id, 'type' => 'ride_accepted']
+                        );
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            \Log::error("FCM Manual Assignment Notification Error: " . $e->getMessage());
+        }
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Chauffeur assigné avec succès.',
+            'ride' => $ride
+        ]);
     }
 }
