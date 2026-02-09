@@ -182,35 +182,47 @@ class RidesController extends Controller
      */
     public function store(Request $request)
     {
-        $data = $request->validate([
-            'pickup_address' => 'required|string|max:255',
-            'dropoff_address' => 'required|string|max:255',
-            'fare_amount' => 'required|numeric|min:1',
-            'passenger_name' => 'nullable|string|max:255',
-            'passenger_phone' => 'nullable|string|max:255',
-            'vehicle_type' => 'nullable|string|in:standard,vip',
-            'has_baggage' => 'nullable|boolean',
-        ]);
+        try {
+            $data = $request->validate([
+                'pickup_address' => 'required|string|max:255',
+                'dropoff_address' => 'required|string|max:255',
+                'fare_amount' => 'required|numeric|min:1',
+                'passenger_name' => 'nullable|string|max:255',
+                'passenger_phone' => 'nullable|string|max:255',
+                'vehicle_type' => 'nullable|string|in:standard,vip',
+                'has_baggage' => 'nullable|boolean',
+            ]);
 
-        $ride = Ride::create([
-            'status' => 'requested',
-            'fare_amount' => $data['fare_amount'],
-            'pickup_address' => $data['pickup_address'],
-            'dropoff_address' => $data['dropoff_address'],
-            'passenger_name' => $data['passenger_name'],
-            'passenger_phone' => $data['passenger_phone'],
-            'vehicle_type' => $data['vehicle_type'] ?? 'standard',
-            'has_baggage' => $data['has_baggage'] ?? false,
-            'currency' => 'XOF',
-            'payment_method' => 'cash',
-        ]);
+            $ride = Ride::create([
+                'status' => 'requested',
+                'fare_amount' => (int) $data['fare_amount'],
+                'pickup_address' => $data['pickup_address'],
+                'dropoff_address' => $data['dropoff_address'],
+                'passenger_name' => $data['passenger_name'],
+                'passenger_phone' => $data['passenger_phone'],
+                'vehicle_type' => $data['vehicle_type'] ?? 'standard',
+                'has_baggage' => $data['has_baggage'] ?? false,
+                'currency' => 'XOF',
+                'payment_method' => 'cash',
+                'declined_driver_ids' => [],
+            ]);
 
-        broadcast(new RideRequested($ride));
+            broadcast(new RideRequested($ride));
 
-        return response()->json([
-            'ok' => true,
-            'ride' => $ride
-        ], 201);
+            return response()->json([
+                'ok' => true,
+                'ride' => $ride
+            ], 201);
+        } catch (\Exception $e) {
+            \Log::error("Manual Ride Creation Error: " . $e->getMessage(), [
+                'request' => $request->all(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'message' => 'Erreur lors de la création de la course.',
+                'error' => $e->getMessage()
+            ], 422);
+        }
     }
 
     /**

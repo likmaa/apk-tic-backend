@@ -49,6 +49,7 @@ class Ride extends Model
         'package_weight',
         'is_fragile',
         'luggage_count',
+        'has_baggage',
         'payment_status',
         'payment_link',
         'external_reference',
