@@ -194,6 +194,7 @@ class RidesController extends Controller
             ]);
 
             $ride = Ride::create([
+                'rider_id' => $request->user()->id,
                 'status' => 'requested',
                 'fare_amount' => (int) $data['fare_amount'],
                 'pickup_address' => $data['pickup_address'],
