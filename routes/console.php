@@ -9,7 +9,7 @@ Artisan::command('inspire', function () {
 
 Artisan::command('rides:expire', function () {
     $expiredRides = \App\Models\Ride::where('status', 'requested')
-        ->where('created_at', '<', now()->subMinutes(5))
+        ->where('created_at', '<', now()->subMinutes(10))
         ->get();
 
     foreach ($expiredRides as $ride) {

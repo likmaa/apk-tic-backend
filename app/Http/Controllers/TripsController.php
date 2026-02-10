@@ -16,8 +16,9 @@ use App\Events\RideStarted;
 use App\Events\RideCompleted;
 use App\Events\RideStopUpdated;
 use App\Events\RideArrived;
-use App\Services\FcmService;
 use App\Models\FcmToken;
+use App\Services\FcmService;
+use App\Services\RideService;
 
 use App\Models\PricingSetting;
 
@@ -26,6 +27,13 @@ use App\Models\User;
 
 class TripsController extends Controller
 {
+    protected $rideService;
+
+    public function __construct(RideService $rideService)
+    {
+        $this->rideService = $rideService;
+    }
+
     public function estimate(Request $request)
     {
         $data = $request->validate([
@@ -245,10 +253,9 @@ class TripsController extends Controller
             'declined_driver_ids' => [],
         ]);
 
-        // Si on a des coordonnées pickup, on tente une assignation immédiate comme pour create()
+        // Si on a des coordonnées pickup, on tente une assignation immédiate
         if ($ride->pickup_lat !== null && $ride->pickup_lng !== null) {
-            // True Broadcast: on laisse offered_driver_id à null pour que tous les chauffeurs éligibles voient la course
-            broadcast(new RideRequested($ride));
+            $this->rideService->notifyNearbyDrivers($ride);
         }
 
         return response()->json([
@@ -351,49 +358,7 @@ class TripsController extends Controller
                 'is_fragile' => (bool) $request->input('is_fragile', false),
                 'declined_driver_ids' => [],
             ]);
-            // True Broadcast: on laisse offered_driver_id à null pour que tous les chauffeurs éligibles voient la course
-            broadcast(new RideRequested($ride));
-
-            // Notify nearby drivers
-            try {
-                $radius = (float) config('app.search_radius_km', 10.0);
-                $earthRadiusKm = 6371.0;
-                $distanceFormula = "(
-                    {$earthRadiusKm} * 2 * ASIN(
-                        SQRT(
-                            POWER(SIN(RADIANS({$pickupLat} - users.last_lat) / 2), 2) +
-                            COS(RADIANS({$pickupLat})) * COS(RADIANS(users.last_lat)) *
-                            POWER(SIN(RADIANS({$pickupLng} - users.last_lng) / 2), 2)
-                        )
-                    )
-                )";
-
-                $nearbyDriverTokens = FcmToken::query()
-                    ->join('users', 'users.id', '=', 'fcm_tokens.user_id')
-                    ->join('driver_profiles', 'driver_profiles.user_id', '=', 'users.id')
-                    ->where('users.role', 'driver')
-                    ->where('users.is_online', true)
-                    ->where('users.is_active', true)
-                    ->where('driver_profiles.status', 'approved')
-                    ->whereNotNull('users.last_lat')
-                    ->whereNotNull('users.last_lng')
-                    ->whereRaw("{$distanceFormula} <= ?", [$radius])
-                    ->pluck('token')
-                    ->unique()
-                    ->toArray();
-
-                if (!empty($nearbyDriverTokens)) {
-                    $fcm = app(FcmService::class);
-                    $fcm->sendToTokens(
-                        $nearbyDriverTokens,
-                        "Nouvelle commande !",
-                        "Une course à {$ride->fare_amount} FCFA est disponible à proximité.",
-                        ['ride_id' => (string) $ride->id, 'type' => 'new_ride']
-                    );
-                }
-            } catch (\Exception $e) {
-                \Log::error("FCM Driver Notification Error: " . $e->getMessage());
-            }
+            $this->rideService->notifyNearbyDrivers($ride);
 
             return response()->json([
                 'id' => $ride->id,

@@ -11,9 +11,16 @@ use App\Events\RideRequested;
 use App\Events\RideAccepted;
 use App\Models\User;
 use App\Services\FcmService;
+use App\Services\RideService;
 
 class RidesController extends Controller
 {
+    protected $rideService;
+
+    public function __construct(RideService $rideService)
+    {
+        $this->rideService = $rideService;
+    }
     public function index(Request $request)
     {
         $status = $request->query('status');
@@ -208,7 +215,7 @@ class RidesController extends Controller
                 'declined_driver_ids' => [],
             ]);
 
-            broadcast(new RideRequested($ride));
+            $this->rideService->notifyNearbyDrivers($ride);
 
             return response()->json([
                 'ok' => true,
