@@ -73,9 +73,14 @@ class UsersController extends Controller
             'name' => ['sometimes', 'string', 'max:255'],
             'email' => ['sometimes', 'email'],
             'phone' => ['sometimes', 'string', 'max:32'],
+            'password' => ['sometimes', 'string', 'min:8'],
             'role' => ['sometimes', 'in:admin,developer,driver,passenger'],
             'is_active' => ['sometimes', 'boolean'],
         ]);
+
+        if (isset($data['password'])) {
+            $data['password'] = Hash::make($data['password']);
+        }
 
         $user->fill($data);
         $user->save();

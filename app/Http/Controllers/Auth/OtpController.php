@@ -218,8 +218,13 @@ class OtpController extends Controller
                 'name' => ['nullable', 'string', 'max:255'],
                 'email' => ['nullable', 'email', 'max:255'],
                 'phone' => ['nullable', 'string', 'max:20'],
+                'password' => ['nullable', 'string', 'min:8'],
                 'photo' => ['nullable'], // Accepter fichier ou string
             ]);
+
+            if (isset($data['password']) && !empty($data['password'])) {
+                $user->password = Hash::make($data['password']);
+            }
 
             // Met à jour le nom complet si fourni
             if (array_key_exists('name', $data) && $data['name'] !== null && $data['name'] !== '') {
