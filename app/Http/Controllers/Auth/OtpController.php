@@ -210,46 +210,54 @@ class OtpController extends Controller
 
     public function updateProfile(Request $request)
     {
-        /** @var \App\Models\User $user */
-        $user = $request->user();
+        try {
+            /** @var \App\Models\User $user */
+            $user = $request->user();
 
-        $data = $request->validate([
-            'name' => ['nullable', 'string', 'max:255'],
-            'email' => ['nullable', 'email', 'max:255'],
-            'phone' => ['nullable', 'string', 'max:20'],
-            'photo' => ['nullable'], // Accepter fichier ou string
-        ]);
+            $data = $request->validate([
+                'name' => ['nullable', 'string', 'max:255'],
+                'email' => ['nullable', 'email', 'max:255'],
+                'phone' => ['nullable', 'string', 'max:20'],
+                'photo' => ['nullable'], // Accepter fichier ou string
+            ]);
 
-        // Met à jour le nom complet si fourni
-        if (array_key_exists('name', $data) && $data['name'] !== null && $data['name'] !== '') {
-            $user->name = $data['name'];
+            // Met à jour le nom complet si fourni
+            if (array_key_exists('name', $data) && $data['name'] !== null && $data['name'] !== '') {
+                $user->name = $data['name'];
+            }
+
+            if (array_key_exists('email', $data) && $data['email'] !== null) {
+                $user->email = $data['email'];
+            }
+
+            // Optionnel : mise à jour du téléphone brut (on ne renormalise pas ici pour éviter de casser l'auth)
+            if (array_key_exists('phone', $data) && $data['phone'] !== null && $data['phone'] !== '') {
+                $user->phone = $data['phone'];
+            }
+
+            if ($request->hasFile('photo')) {
+                $path = $request->file('photo')->store('profiles', 'public');
+                $user->photo = $path; // On stocke juste le chemin relatif
+            } elseif (array_key_exists('photo', $data) && $data['photo'] !== null && $data['photo'] !== '') {
+                $user->photo = $data['photo'];
+            }
+
+            $user->save();
+
+            return response()->json([
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'phone' => $user->phone,
+                'role' => $user->role,
+                'photo' => $user->photo,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Erreur serveur lors de la mise à jour du profil.',
+                'error' => $e->getMessage(),
+                'trace' => config('app.debug') ? $e->getTraceAsString() : null
+            ], 500);
         }
-
-        if (array_key_exists('email', $data) && $data['email'] !== null) {
-            $user->email = $data['email'];
-        }
-
-        // Optionnel : mise à jour du téléphone brut (on ne renormalise pas ici pour éviter de casser l'auth)
-        if (array_key_exists('phone', $data) && $data['phone'] !== null && $data['phone'] !== '') {
-            $user->phone = $data['phone'];
-        }
-
-        if ($request->hasFile('photo')) {
-            $path = $request->file('photo')->store('profiles', 'public');
-            $user->photo = $path; // On stocke juste le chemin relatif
-        } elseif (array_key_exists('photo', $data) && $data['photo'] !== null && $data['photo'] !== '') {
-            $user->photo = $data['photo'];
-        }
-
-        $user->save();
-
-        return response()->json([
-            'id' => $user->id,
-            'name' => $user->name,
-            'email' => $user->email,
-            'phone' => $user->phone,
-            'role' => $user->role,
-            'photo' => $user->photo,
-        ]);
     }
 }
