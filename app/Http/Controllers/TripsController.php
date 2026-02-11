@@ -1223,11 +1223,50 @@ class TripsController extends Controller
 
         // Nouveau système : Diffusion au lieu de ciblage individuel
         // On cherche une course 'requested' dans un rayon de 10km du chauffeur
+        // OU une course sans coordonnées (créée manuellement par l'admin)
         $lat = $driver->last_lat;
         $lng = $driver->last_lng;
 
         if ($lat === null || $lng === null) {
-            return response()->json(null, 204);
+            // Even without driver coordinates, show manual rides (no coords)
+            $rides = Ride::query()
+                ->where('status', 'requested')
+                ->where(function ($q) {
+                    $q->whereNull('pickup_lat')->orWhereNull('pickup_lng');
+                });
+
+            // Exclure les courses déjà déclinées par ce chauffeur
+            $rides->where(function ($q) use ($driver) {
+                $q->whereNull('declined_driver_ids')
+                    ->orWhereRaw("NOT JSON_CONTAINS(declined_driver_ids, CAST(? AS JSON))", [json_encode($driver->id)]);
+            });
+
+            $rides = $rides->orderByDesc('id')->limit(5)->get();
+
+            if ($rides->isEmpty()) {
+                return response()->json([], 200);
+            }
+
+            $formattedRides = $rides->map(function ($ride) {
+                $passenger = $ride->rider_id ? User::find($ride->rider_id) : null;
+                return [
+                    'id' => $ride->id,
+                    'pickup_address' => $ride->pickup_address ?? null,
+                    'dropoff_address' => $ride->dropoff_address ?? null,
+                    'fare_amount' => (int) ($ride->fare_amount ?? 0),
+                    'status' => $ride->status,
+                    'pickup_lat' => $ride->pickup_lat,
+                    'pickup_lng' => $ride->pickup_lng,
+                    'dropoff_lat' => $ride->dropoff_lat,
+                    'dropoff_lng' => $ride->dropoff_lng,
+                    'rider' => $this->formatPassenger($passenger),
+                    'vehicle_type' => $ride->vehicle_type,
+                    'has_baggage' => (bool) $ride->has_baggage,
+                    'service_type' => $ride->service_type,
+                ];
+            });
+
+            return response()->json($formattedRides);
         }
 
         $earthRadiusKm = 6371.0;
@@ -1245,9 +1284,18 @@ class TripsController extends Controller
 
         $rides = Ride::query()
             ->where('status', 'requested')
-            ->whereNotNull('pickup_lat')
-            ->whereNotNull('pickup_lng')
-            ->whereRaw("{$distanceFormula} <= ?", [$searchRadiusKm]);
+            ->where(function ($q) use ($distanceFormula, $searchRadiusKm) {
+                // Rides with coordinates within radius
+                $q->where(function ($sub) use ($distanceFormula, $searchRadiusKm) {
+                    $sub->whereNotNull('pickup_lat')
+                        ->whereNotNull('pickup_lng')
+                        ->whereRaw("{$distanceFormula} <= ?", [$searchRadiusKm]);
+                })
+                    // OR rides without coordinates (manual admin rides)
+                    ->orWhere(function ($sub) {
+                    $sub->whereNull('pickup_lat')->orWhereNull('pickup_lng');
+                });
+            });
 
         // Exclure les courses déjà déclinées par ce chauffeur
         $rides->where(function ($q) use ($driver) {

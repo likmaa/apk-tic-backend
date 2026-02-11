@@ -31,8 +31,9 @@ class RideService
         }
 
         // 2. Notification Push Mobile (FCM)
-        if ($ride->pickup_lat && $ride->pickup_lng) {
-            try {
+        try {
+            if ($ride->pickup_lat && $ride->pickup_lng) {
+                // Geo-targeted: notify drivers within radius
                 $radius = (float) config('app.search_radius_km', 10.0);
                 $earthRadiusKm = 6371.0;
 
@@ -62,24 +63,38 @@ class RideService
                     ->pluck('token')
                     ->unique()
                     ->toArray();
+            } else {
+                // Fallback: no coordinates — broadcast to ALL active drivers
+                Log::info("FCM Fallback: No coordinates for Ride #{$ride->id}, broadcasting to all active drivers.");
 
-                if (!empty($nearbyDriverTokens)) {
-                    $this->fcm->sendToTokens(
-                        $nearbyDriverTokens,
-                        "Nouvelle commande !",
-                        "Une course à " . number_format($ride->fare_amount, 0, ',', ' ') . " FCFA est disponible à proximité.",
-                        [
-                            'ride_id' => (string) $ride->id,
-                            'type' => 'new_ride',
-                            'pickup_address' => (string) $ride->pickup_address,
-                            'fare' => (string) $ride->fare_amount
-                        ]
-                    );
-                    Log::info("FCM Sent to " . count($nearbyDriverTokens) . " drivers for Ride #{$ride->id}");
-                }
-            } catch (\Exception $e) {
-                Log::error("FCM Driver Notification Error: " . $e->getMessage());
+                $nearbyDriverTokens = FcmToken::query()
+                    ->join('users', 'users.id', '=', 'fcm_tokens.user_id')
+                    ->join('driver_profiles', 'driver_profiles.user_id', '=', 'users.id')
+                    ->where('users.role', 'driver')
+                    ->where('users.is_online', true)
+                    ->where('users.is_active', true)
+                    ->where('driver_profiles.status', 'approved')
+                    ->pluck('token')
+                    ->unique()
+                    ->toArray();
             }
+
+            if (!empty($nearbyDriverTokens)) {
+                $this->fcm->sendToTokens(
+                    $nearbyDriverTokens,
+                    "Nouvelle commande !",
+                    "Une course à " . number_format($ride->fare_amount, 0, ',', ' ') . " FCFA est disponible à proximité.",
+                    [
+                        'ride_id' => (string) $ride->id,
+                        'type' => 'new_ride',
+                        'pickup_address' => (string) $ride->pickup_address,
+                        'fare' => (string) $ride->fare_amount
+                    ]
+                );
+                Log::info("FCM Sent to " . count($nearbyDriverTokens) . " drivers for Ride #{$ride->id}");
+            }
+        } catch (\Exception $e) {
+            Log::error("FCM Driver Notification Error: " . $e->getMessage());
         }
     }
 }

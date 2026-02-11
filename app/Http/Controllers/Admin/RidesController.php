@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use App\Models\Ride;
 use App\Events\RideCancelled;
 use App\Events\RideRequested;
@@ -185,6 +187,46 @@ class RidesController extends Controller
     }
 
     /**
+     * Tente de géocoder une adresse via Mapbox.
+     * Retourne [lat, lng] ou [null, null] en cas d'échec.
+     */
+    private function geocodeAddress(string $address): array
+    {
+        try {
+            $token = env('MAPBOX_TOKEN');
+            if (!$token) {
+                Log::warning('Admin Geocoding: MAPBOX_TOKEN not configured');
+                return [null, null];
+            }
+
+            $url = "https://api.mapbox.com/geocoding/v5/mapbox.places/" . urlencode($address) . ".json";
+            $response = Http::timeout(4)->get($url, [
+                'access_token' => $token,
+                'limit' => 1,
+                'country' => 'bj',
+                'language' => 'fr',
+            ]);
+
+            if ($response->ok()) {
+                $features = $response->json()['features'] ?? [];
+                if (!empty($features)) {
+                    $center = $features[0]['center'] ?? null;
+                    if ($center && count($center) === 2) {
+                        Log::info("Admin Geocoding OK: '{$address}' => [{$center[1]}, {$center[0]}]");
+                        return [(float) $center[1], (float) $center[0]]; // [lat, lng]
+                    }
+                }
+            }
+
+            Log::warning("Admin Geocoding: No results for '{$address}'");
+        } catch (\Exception $e) {
+            Log::error("Admin Geocoding Error: " . $e->getMessage());
+        }
+
+        return [null, null];
+    }
+
+    /**
      * Crée manuellement une course par l'administrateur.
      */
     public function store(Request $request)
@@ -198,7 +240,24 @@ class RidesController extends Controller
                 'passenger_phone' => 'nullable|string|max:255',
                 'vehicle_type' => 'nullable|string|in:standard,vip',
                 'has_baggage' => 'nullable|boolean',
+                'pickup_lat' => 'nullable|numeric',
+                'pickup_lng' => 'nullable|numeric',
+                'dropoff_lat' => 'nullable|numeric',
+                'dropoff_lng' => 'nullable|numeric',
             ]);
+
+            // Auto-geocode pickup address if coordinates are not provided
+            $pickupLat = $data['pickup_lat'] ?? null;
+            $pickupLng = $data['pickup_lng'] ?? null;
+            $dropoffLat = $data['dropoff_lat'] ?? null;
+            $dropoffLng = $data['dropoff_lng'] ?? null;
+
+            if (!$pickupLat || !$pickupLng) {
+                [$pickupLat, $pickupLng] = $this->geocodeAddress($data['pickup_address']);
+            }
+            if (!$dropoffLat || !$dropoffLng) {
+                [$dropoffLat, $dropoffLng] = $this->geocodeAddress($data['dropoff_address']);
+            }
 
             $ride = Ride::create([
                 'rider_id' => $request->user()->id,
@@ -206,6 +265,10 @@ class RidesController extends Controller
                 'fare_amount' => (int) $data['fare_amount'],
                 'pickup_address' => $data['pickup_address'],
                 'dropoff_address' => $data['dropoff_address'],
+                'pickup_lat' => $pickupLat,
+                'pickup_lng' => $pickupLng,
+                'dropoff_lat' => $dropoffLat,
+                'dropoff_lng' => $dropoffLng,
                 'passenger_name' => $data['passenger_name'],
                 'passenger_phone' => $data['passenger_phone'],
                 'vehicle_type' => $data['vehicle_type'] ?? 'standard',
