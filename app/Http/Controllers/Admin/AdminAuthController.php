@@ -12,16 +12,16 @@ class AdminAuthController extends Controller
     public function login(Request $request)
     {
         $data = $request->validate([
-            'email' => ['nullable','email'],
-            'phone' => ['nullable','string','min:8','max:20'],
-            'password' => ['required','string','min:6'],
+            'email' => ['nullable', 'email'],
+            'phone' => ['nullable', 'string', 'min:8', 'max:20'],
+            'password' => ['required', 'string', 'min:6'],
         ]);
 
         if (empty($data['email']) && empty($data['phone'])) {
             return response()->json(['message' => 'Email ou téléphone requis'], 422);
         }
 
-        $query = User::query()->whereIn('role', ['admin','developer']);
+        $query = User::query()->whereIn('role', ['admin', 'developer']);
         if (!empty($data['email'])) {
             $query->where('email', $data['email']);
         } else {
@@ -43,6 +43,7 @@ class AdminAuthController extends Controller
                 'email' => $user->email,
                 'phone' => $user->phone,
                 'role' => $user->role,
+                'photo' => $user->photo,
             ],
         ]);
     }
@@ -63,6 +64,7 @@ class AdminAuthController extends Controller
             'email' => $u->email,
             'phone' => $u->phone,
             'role' => $u->role,
+            'photo' => $u->photo,
         ]);
     }
 }
