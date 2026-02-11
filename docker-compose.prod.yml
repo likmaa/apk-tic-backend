@@ -12,7 +12,7 @@ services:
       - APP_DEBUG=false
     volumes:
       - laravel_storage:/var/www/html/storage
-      - laravel_storage:/var/www/html/bootstrap/cache
+      - laravel_cache:/var/www/html/bootstrap/cache
     networks:
       - apk-tic-network
     depends_on:
@@ -85,6 +85,7 @@ services:
 volumes:
   mysql_data:
   laravel_storage:
+  laravel_cache:
 
 
 networks:

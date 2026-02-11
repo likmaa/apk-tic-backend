@@ -41,6 +41,9 @@ RUN rm -rf /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default
 RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
     && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
 
+# Créer le lien symbolique pour le stockage (supprimer l'existant s'il est cassé)
+RUN rm -rf public/storage && php artisan storage:link
+
 # Exposer le port HTTP
 EXPOSE 80
 
