@@ -112,14 +112,10 @@ class User extends Authenticatable
             return null;
         }
 
-        // Si c'est déjà une URL complète (ex: gravatar ou legacy), on la laisse
-        if (str_starts_with($value, 'http')) {
-            // Optionnel: on pourrait essayer de corriger les URLs localhost ici si on est en prod
-            // mais il vaut mieux stocker des chemins relatifs.
-            return $value;
-        }
-
-        return asset('storage/' . $value);
+        // On retourne le chemin relatif tel quel.
+        // Les clients (Dashboards, Mobile) s'occupent d'ajouter le baseURL/storage/.
+        // Cela évite les erreurs si APP_URL est mal configuré sur le serveur.
+        return $value;
     }
 
     public function getRatingAttribute()
