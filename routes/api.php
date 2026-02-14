@@ -25,6 +25,7 @@ use App\Http\Controllers\DriverProfileController;
 use App\Http\Controllers\WithdrawController;
 use App\Http\Controllers\Admin\PromotionController;
 use App\Http\Controllers\Api\KkiapayWebhookController;
+use App\Http\Controllers\Api\MobileLogController;
 
 // Health check endpoint (public)
 Route::get('/health', fn() => response()->json(['status' => 'ok', 'timestamp' => now()]));
@@ -138,6 +139,10 @@ Route::prefix('admin')->group(function () {
 
         // Analytics (developer only)
         Route::get('/analytics/reconnections', [\App\Http\Controllers\Admin\AnalyticsController::class, 'reconnections']);
+
+        // Mobile Logs retrieval (developer only)
+        Route::get('/dev/mobile-logs', [MobileLogController::class, 'index']);
+        Route::post('/dev/mobile-logs/clear', [MobileLogController::class, 'clear']);
     });
 
     // Moderation actions (admin + developer)
@@ -219,6 +224,7 @@ Route::middleware(['auth:sanctum'])->prefix('trips')->group(function () {
 // Analytics endpoint pour les apps mobiles
 Route::middleware(['auth:sanctum'])->prefix('analytics')->group(function () {
     Route::post('/reconnection', [\App\Http\Controllers\Admin\AnalyticsController::class, 'trackReconnection']);
+    Route::post('/log', [MobileLogController::class, 'store']);
 });
 
 // Public geocoding proxy (throttled)
