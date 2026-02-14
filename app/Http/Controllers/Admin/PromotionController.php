@@ -26,13 +26,25 @@ class PromotionController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate([
-            'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'image' => 'required|image|max:2048', // 2MB Max
-            'link_url' => 'nullable|url',
-            'is_active' => 'boolean',
-        ]);
+        try {
+            $request->validate([
+                'title' => 'required|string|max:255',
+                'description' => 'nullable|string',
+                'image' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:5120', // 5MB Max
+                'link_url' => 'nullable|url',
+                'is_active' => 'boolean',
+            ], [
+                'image.required' => 'L\'image est obligatoire.',
+                'image.image' => 'Le fichier doit être une image valide.',
+                'image.mimes' => 'L\'image doit être au format jpeg, png, jpg, gif ou webp.',
+                'image.max' => 'L\'image ne doit pas dépasser 5 Mo.',
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Erreur de validation',
+                'errors' => $e->errors(),
+            ], 422);
+        }
 
         $promotion = new Promotion($request->only(['title', 'description', 'link_url', 'is_active']));
 
@@ -53,7 +65,7 @@ class PromotionController extends Controller
         $request->validate([
             'title' => 'sometimes|required|string|max:255',
             'description' => 'nullable|string',
-            'image' => 'nullable|image|max:2048',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
             'link_url' => 'nullable|url',
             'is_active' => 'boolean',
         ]);
