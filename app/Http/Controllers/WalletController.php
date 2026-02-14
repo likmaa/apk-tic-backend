@@ -150,28 +150,31 @@ class WalletController extends Controller
             if ($data['method'] === 'wallet') {
                 $wallet = $this->getOrCreateWallet($user->id);
                 $before = (int) $wallet['balance'];
-                if ($before < $amount) {
-                    abort(response()->json(['message' => 'insufficient_funds'], 422));
+
+                // Partial payment: debit whatever is available
+                $walletDebit = min($before, $amount);
+                $cashRemainder = $amount - $walletDebit;
+                $after = $before - $walletDebit;
+
+                if ($walletDebit > 0) {
+                    DB::table('wallet_transactions')->insert([
+                        'wallet_id' => $wallet['id'],
+                        'type' => 'debit',
+                        'source' => 'ride_payment',
+                        'amount' => $walletDebit,
+                        'balance_before' => $before,
+                        'balance_after' => $after,
+                        'meta' => json_encode(['ride_id' => $ride->id, 'cash_remainder' => $cashRemainder]),
+                        'created_at' => now(),
+                    ]);
+
+                    DB::table('wallets')->where('id', $wallet['id'])->update([
+                        'balance' => $after,
+                        'updated_at' => now(),
+                    ]);
                 }
-                $after = $before - $amount;
 
-                DB::table('wallet_transactions')->insert([
-                    'wallet_id' => $wallet['id'],
-                    'type' => 'debit',
-                    'source' => 'ride_payment',
-                    'amount' => $amount,
-                    'balance_before' => $before,
-                    'balance_after' => $after,
-                    'meta' => json_encode(['ride_id' => $ride->id]),
-                    'created_at' => now(),
-                ]);
-
-                DB::table('wallets')->where('id', $wallet['id'])->update([
-                    'balance' => $after,
-                    'updated_at' => now(),
-                ]);
-
-                // Credit Driver Wallet
+                // Credit Driver Wallet (full earnings regardless of payment split)
                 if ($ride->driver_id) {
                     $earnings = $ride->driver_earnings_amount;
                     if ($earnings > 0) {
@@ -216,7 +219,7 @@ class WalletController extends Controller
                 'currency' => $currency,
                 'method' => $data['method'],
                 'status' => $status,
-                'meta' => null,
+                'meta' => json_encode(['wallet_debit' => $walletDebit ?? 0, 'cash_remainder' => $cashRemainder ?? 0]),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -236,6 +239,8 @@ class WalletController extends Controller
                 'currency' => $currency,
                 'method' => $data['method'],
                 'status' => $status,
+                'wallet_debited' => $walletDebit ?? 0,
+                'cash_remainder' => $cashRemainder ?? 0,
             ];
         });
 

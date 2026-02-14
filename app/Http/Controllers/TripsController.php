@@ -954,10 +954,10 @@ class TripsController extends Controller
                 $q->whereIn('status', ['requested', 'accepted', 'arrived', 'started', 'ongoing'])
                     ->orWhere(function ($sq) {
                         $sq->where('status', 'completed')
-                            ->where('completed_at', '>=', now()->subMinutes(60))
+                            ->where('completed_at', '>=', now()->subMinutes(15))
                             ->where(function ($sq2) {
                                 $sq2->where('payment_status', '!=', 'completed')
-                                    ->orWhereDoesntHave('rating');
+                                    ->whereDoesntHave('rating');
                             });
                     });
             })
