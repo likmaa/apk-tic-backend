@@ -60,32 +60,49 @@ class PromotionController extends Controller
 
     public function update(Request $request, $id)
     {
-        $promotion = Promotion::findOrFail($id);
+        try {
+            $promotion = Promotion::findOrFail($id);
 
-        $request->validate([
-            'title' => 'sometimes|required|string|max:255',
-            'description' => 'nullable|string',
-            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
-            'link_url' => 'nullable|url',
-            'is_active' => 'boolean',
-        ]);
+            $request->validate([
+                'title' => 'sometimes|required|string|max:255',
+                'description' => 'nullable|string',
+                'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
+                'link_url' => 'nullable',
+                'is_active' => 'nullable',
+            ]);
 
-        $promotion->fill($request->only(['title', 'description', 'link_url', 'is_active']));
+            $promotion->fill($request->only(['title', 'description', 'link_url']));
 
-        if ($request->hasFile('image')) {
-            // Delete old image if exists
-            if ($promotion->image_url) {
-                $oldPath = str_replace('/storage/', '', $promotion->image_url);
-                Storage::disk('public')->delete($oldPath);
+            // Handle is_active (can come as string "true"/"false" from FormData)
+            if ($request->has('is_active')) {
+                $promotion->is_active = filter_var($request->is_active, FILTER_VALIDATE_BOOLEAN);
             }
 
-            $path = $request->file('image')->store('promotions', 'public');
-            $promotion->image_url = Storage::url($path);
+            if ($request->hasFile('image')) {
+                // Delete old image if exists
+                if ($promotion->image_url) {
+                    $oldPath = str_replace('/storage/', '', $promotion->image_url);
+                    Storage::disk('public')->delete($oldPath);
+                }
+
+                $path = $request->file('image')->store('promotions', 'public');
+                $promotion->image_url = Storage::url($path);
+            }
+
+            $promotion->save();
+
+            return response()->json($promotion);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Erreur de validation',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Erreur serveur',
+                'error' => $e->getMessage(),
+            ], 500);
         }
-
-        $promotion->save();
-
-        return response()->json($promotion);
     }
 
     public function destroy($id)
