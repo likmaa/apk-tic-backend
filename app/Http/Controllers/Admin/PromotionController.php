@@ -50,7 +50,7 @@ class PromotionController extends Controller
 
         if ($request->hasFile('image')) {
             $path = $request->file('image')->store('promotions', 'public');
-            $promotion->image_url = Storage::url($path);
+            $promotion->image_url = url(Storage::url($path));
         }
 
         $promotion->save();
