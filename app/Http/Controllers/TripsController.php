@@ -1212,6 +1212,7 @@ class TripsController extends Controller
             'passenger_phone' => $ride->passenger_phone,
             'stop_started_at' => $ride->stop_started_at,
             'total_stop_duration_s' => $ride->total_stop_duration_s,
+            'payment_method' => $ride->payment_method,
             ...$this->calculateRideFareBreakdown($ride),
         ]);
     }
@@ -1268,6 +1269,7 @@ class TripsController extends Controller
                     'vehicle_type' => $ride->vehicle_type,
                     'has_baggage' => (bool) $ride->has_baggage,
                     'service_type' => $ride->service_type,
+                    'payment_method' => $ride->payment_method,
                 ];
             });
 
@@ -1332,6 +1334,7 @@ class TripsController extends Controller
                 'vehicle_type' => $ride->vehicle_type,
                 'has_baggage' => (bool) $ride->has_baggage,
                 'service_type' => $ride->service_type,
+                'payment_method' => $ride->payment_method,
             ];
         });
 
