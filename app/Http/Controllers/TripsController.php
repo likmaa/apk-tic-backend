@@ -1084,18 +1084,25 @@ class TripsController extends Controller
             ->where('driver_id', $driver->id)
             ->where('status', 'completed');
 
-        if ($from && $to) {
-            $completedQuery->whereBetween('completed_at', [$from . ' 00:00:00', $to . ' 23:59:59']);
+        if ($from) {
+            $completedQuery->whereDate('completed_at', '>=', $from);
+        }
+        if ($to) {
+            $completedQuery->whereDate('completed_at', '<=', $to);
         }
 
         $totalRides = (clone $completedQuery)->count();
         $totalEarnings = (clone $completedQuery)->sum('driver_earnings_amount');
         $totalFare = (clone $completedQuery)->sum('fare_amount');
+        $lastRide = (clone $completedQuery)->orderByDesc('completed_at')->first();
 
         // Acceptance / cancellation rates: consider all rides assigned to this driver in the range
         $assignedQuery = Ride::query()->where('driver_id', $driver->id);
-        if ($from && $to) {
-            $assignedQuery->whereBetween('created_at', [$from . ' 00:00:00', $to . ' 23:59:59']);
+        if ($from) {
+            $assignedQuery->whereDate('created_at', '>=', $from);
+        }
+        if ($to) {
+            $assignedQuery->whereDate('created_at', '<=', $to);
         }
 
         $totalAssigned = (clone $assignedQuery)->count();
@@ -1129,6 +1136,7 @@ class TripsController extends Controller
             'total_rides' => $totalRides,
             'total_earnings' => (int) $totalEarnings,
             'total_fare' => (int) $totalFare,
+            'last_completed_at' => $lastRide ? $lastRide->completed_at->toIso8601String() : null,
             'currency' => 'XOF',
             'range' => [
                 'from' => $from,
