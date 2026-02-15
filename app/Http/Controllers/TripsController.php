@@ -1085,16 +1085,17 @@ class TripsController extends Controller
             ->where('status', 'completed');
 
         if ($from && $to) {
-            $completedQuery->whereBetween('completed_at', [$from, $to]);
+            $completedQuery->whereBetween('completed_at', [$from . ' 00:00:00', $to . ' 23:59:59']);
         }
 
         $totalRides = (clone $completedQuery)->count();
         $totalEarnings = (clone $completedQuery)->sum('driver_earnings_amount');
+        $totalFare = (clone $completedQuery)->sum('fare_amount');
 
         // Acceptance / cancellation rates: consider all rides assigned to this driver in the range
         $assignedQuery = Ride::query()->where('driver_id', $driver->id);
         if ($from && $to) {
-            $assignedQuery->whereBetween('created_at', [$from, $to]);
+            $assignedQuery->whereBetween('created_at', [$from . ' 00:00:00', $to . ' 23:59:59']);
         }
 
         $totalAssigned = (clone $assignedQuery)->count();
@@ -1127,6 +1128,7 @@ class TripsController extends Controller
             'driver_id' => $driver->id,
             'total_rides' => $totalRides,
             'total_earnings' => (int) $totalEarnings,
+            'total_fare' => (int) $totalFare,
             'currency' => 'XOF',
             'range' => [
                 'from' => $from,
