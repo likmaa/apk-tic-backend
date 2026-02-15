@@ -557,7 +557,7 @@ class TripsController extends Controller
 
         try {
             // Execute all DB operations in a transaction
-            $result = DB::transaction(function () use ($ride, $driver) {
+            $result = DB::transaction(function () use ($ride, $driver, $request) {
                 // Handle active stop if not ended
                 if ($ride->stop_started_at) {
                     $duration = (int) now()->diffInSeconds($ride->stop_started_at, true);
@@ -594,6 +594,12 @@ class TripsController extends Controller
                         ],
                     ];
                 });
+
+                // Update distance if provided from the driver app
+                if ($request->has('distance_m')) {
+                    $ride->distance_m = (int) $request->input('distance_m');
+                    $ride->save();
+                }
 
                 // 1. Calculate trajectory price (Base + Distance)
                 $distanceKm = ($ride->distance_m ?? 0) / 1000.0;
