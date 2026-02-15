@@ -25,6 +25,7 @@ class DriverProfileController extends Controller
                 'phone' => $user->phone,
                 'role' => $user->role,
                 'photo' => $user->photo,
+                'is_online' => (bool) $user->is_online,
             ],
             'profile' => $profile ? [
                 'status' => $profile->status,

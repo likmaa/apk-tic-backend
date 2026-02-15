@@ -59,6 +59,7 @@ class RideService
                     ->where('driver_profiles.status', 'approved')
                     ->whereNotNull('users.last_lat')
                     ->whereNotNull('users.last_lng')
+                    ->where('users.last_location_at', '>=', now()->subMinutes(5))
                     ->whereRaw("{$distanceFormula} <= ?", [$radius])
                     ->pluck('token')
                     ->unique()
@@ -74,6 +75,9 @@ class RideService
                     ->where('users.is_online', true)
                     ->where('users.is_active', true)
                     ->where('driver_profiles.status', 'approved')
+                    ->whereNotNull('users.last_lat')
+                    ->whereNotNull('users.last_lng')
+                    ->where('users.last_location_at', '>=', now()->subMinutes(5))
                     ->pluck('token')
                     ->unique()
                     ->toArray();
