@@ -492,7 +492,12 @@ class TripsController extends Controller
         $ride->arrived_at = now();
         $ride->save();
 
-        broadcast(new RideArrived($ride));
+        try {
+            broadcast(new RideArrived($ride->id, $ride->rider_id, $ride->arrived_at->toIso8601String()));
+            \Log::info("[Arrived] Broadcast sent for ride {$ride->id} to rider {$ride->rider_id}");
+        } catch (\Exception $e) {
+            \Log::error("[Arrived] Broadcast FAILED for ride {$ride->id}: " . $e->getMessage());
+        }
 
         // Notify passenger
         try {
@@ -1030,6 +1035,7 @@ class TripsController extends Controller
         return response()->json([
             'id' => $ride->id,
             'status' => $ride->status,
+            'arrived_at' => $ride->arrived_at ? $ride->arrived_at->toIso8601String() : null,
             'rider_id' => $ride->rider_id,
             'driver_id' => $ride->driver_id,
             'fare_amount' => (int) ($ride->fare_amount ?? 0),
@@ -1059,6 +1065,11 @@ class TripsController extends Controller
                     'license_plate' => $ride->driver->driverProfile->license_plate,
                     'type' => $ride->driver->driverProfile->vehicle_type,
                 ] : null,
+                'rating_average' => $ride->driver ? (float) \DB::table('ratings')
+                    ->where('driver_id', $ride->driver->id)
+                    ->avg('stars') : 0.0,
+                'lat' => $ride->driver->last_lat,
+                'lng' => $ride->driver->last_lng,
             ] : null,
             'passenger_name' => $ride->passenger_name,
             'passenger_phone' => $ride->passenger_phone,
