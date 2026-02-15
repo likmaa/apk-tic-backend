@@ -26,11 +26,15 @@ use App\Http\Controllers\WithdrawController;
 use App\Http\Controllers\Admin\PromotionController;
 use App\Http\Controllers\Api\KkiapayWebhookController;
 use App\Http\Controllers\Api\MobileLogController;
+use App\Http\Controllers\StorageController;
 
 // Health check endpoint (public)
 Route::get('/health', fn() => response()->json(['status' => 'ok', 'timestamp' => now()]));
 Route::get('/promotions', [PromotionController::class, 'indexPublic']);
 Route::post('/webhooks/kkiapay', [KkiapayWebhookController::class, 'handle']);
+
+// Servir les fichiers de stockage via l'API (photos de profil, etc.)
+Route::get('/storage/{path}', [StorageController::class, 'show'])->where('path', '.*');
 
 Route::prefix('auth')->group(function () {
     Route::post('/request-otp', [OtpController::class, 'requestOtp'])->middleware('throttle:otp');
