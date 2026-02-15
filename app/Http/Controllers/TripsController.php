@@ -202,75 +202,88 @@ class TripsController extends Controller
      */
     public function requestTicRide(Request $request)
     {
-        /** @var User|null $user */
-        $user = Auth::user();
-        if (!$user || !$user->isPassenger()) {
-            return response()->json(['message' => 'Forbidden'], 403);
+        try {
+            /** @var User|null $user */
+            $user = Auth::user();
+            if (!$user || !$user->isPassenger()) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+
+            $data = $request->validate([
+                'pickup_label' => ['required', 'string', 'max:255'],
+                'dropoff_label' => ['required', 'string', 'max:255'],
+                'price' => ['required', 'numeric', 'min:1'],
+                'pickup_lat' => ['nullable', 'numeric', 'between:-90,90'],
+                'pickup_lng' => ['nullable', 'numeric', 'between:-180,180'],
+                'dropoff_lat' => ['nullable', 'numeric', 'between:-90,90'],
+                'dropoff_lng' => ['nullable', 'numeric', 'between:-180,180'],
+                'passenger_name' => ['nullable', 'string', 'max:255'],
+                'passenger_phone' => ['nullable', 'string', 'max:255'],
+                'vehicle_type' => ['nullable', 'string', 'in:standard,vip'],
+                'has_baggage' => ['nullable', 'boolean'],
+                'payment_method' => ['nullable', 'string', 'in:cash,wallet,card,qr'],
+            ]);
+
+            $pickupLat = $data['pickup_lat'] ?? null;
+            $pickupLng = $data['pickup_lng'] ?? null;
+            $dropoffLat = $data['dropoff_lat'] ?? null;
+            $dropoffLng = $data['dropoff_lng'] ?? null;
+
+            $ride = Ride::create([
+                'rider_id' => $user->id,
+                'driver_id' => null,
+                'offered_driver_id' => null,
+                'status' => 'requested',
+                'fare_amount' => (int) $data['price'],
+                'commission_amount' => 0,
+                'driver_earnings_amount' => 0,
+                'currency' => 'XOF',
+                'distance_m' => null,
+                'duration_s' => null,
+                'pickup_lat' => $pickupLat,
+                'pickup_lng' => $pickupLng,
+                'pickup_address' => $data['pickup_label'],
+                'dropoff_lat' => $dropoffLat,
+                'dropoff_lng' => $dropoffLng,
+                'dropoff_address' => $data['dropoff_label'],
+                'passenger_name' => $data['passenger_name'] ?? null,
+                'passenger_phone' => $data['passenger_phone'] ?? null,
+                'vehicle_type' => $data['vehicle_type'] ?? 'standard',
+                'has_baggage' => $data['has_baggage'] ?? false,
+                'payment_method' => $data['payment_method'] ?? 'cash',
+                'service_type' => 'deplacement',
+                'declined_driver_ids' => [],
+            ]);
+
+            // Si on a des coordonnées pickup, on tente une assignation immédiate
+            if ($ride->pickup_lat !== null && $ride->pickup_lng !== null) {
+                $this->rideService->notifyNearbyDrivers($ride);
+            }
+
+            return response()->json([
+                'id' => $ride->id,
+                'status' => $ride->status,
+                'price' => $ride->fare_amount,
+                'currency' => $ride->currency,
+                'passenger_name' => $ride->passenger_name,
+                'passenger_phone' => $ride->passenger_phone,
+                'stop_started_at' => $ride->stop_started_at,
+                'total_stop_duration_s' => $ride->total_stop_duration_s,
+                ...$this->calculateRideFareBreakdown($ride),
+                'vehicle_type' => $ride->vehicle_type,
+                'has_baggage' => (bool) $ride->has_baggage,
+            ], 201);
+        } catch (\Exception $e) {
+            \Log::error("TIC RIDE REQUEST FAILED: " . $e->getMessage(), [
+                'user_id' => Auth::id(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'message' => 'Server Error: ' . $e->getMessage(),
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ], 500);
         }
-
-        $data = $request->validate([
-            'pickup_label' => ['required', 'string', 'max:255'],
-            'dropoff_label' => ['required', 'string', 'max:255'],
-            'price' => ['required', 'numeric', 'min:1'],
-            'pickup_lat' => ['nullable', 'numeric', 'between:-90,90'],
-            'pickup_lng' => ['nullable', 'numeric', 'between:-180,180'],
-            'dropoff_lat' => ['nullable', 'numeric', 'between:-90,90'],
-            'dropoff_lng' => ['nullable', 'numeric', 'between:-180,180'],
-            'passenger_name' => ['nullable', 'string', 'max:255'],
-            'passenger_phone' => ['nullable', 'string', 'max:255'],
-            'vehicle_type' => ['nullable', 'string', 'in:standard,vip'],
-            'has_baggage' => ['nullable', 'boolean'],
-            'payment_method' => ['nullable', 'string', 'in:cash,wallet,card,qr'],
-        ]);
-
-        $pickupLat = $data['pickup_lat'] ?? null;
-        $pickupLng = $data['pickup_lng'] ?? null;
-        $dropoffLat = $data['dropoff_lat'] ?? null;
-        $dropoffLng = $data['dropoff_lng'] ?? null;
-
-        $ride = Ride::create([
-            'rider_id' => $user->id,
-            'driver_id' => null,
-            'offered_driver_id' => null,
-            'status' => 'requested',
-            'fare_amount' => (int) $data['price'],
-            'commission_amount' => 0,
-            'driver_earnings_amount' => 0,
-            'currency' => 'XOF',
-            'distance_m' => null,
-            'duration_s' => null,
-            'pickup_lat' => $pickupLat,
-            'pickup_lng' => $pickupLng,
-            'pickup_address' => $data['pickup_label'],
-            'dropoff_lat' => $dropoffLat,
-            'dropoff_lng' => $dropoffLng,
-            'dropoff_address' => $data['dropoff_label'],
-            'passenger_name' => $data['passenger_name'] ?? null,
-            'passenger_phone' => $data['passenger_phone'] ?? null,
-            'vehicle_type' => $data['vehicle_type'] ?? 'standard',
-            'has_baggage' => $data['has_baggage'] ?? false,
-            'payment_method' => $data['payment_method'] ?? 'cash',
-            'declined_driver_ids' => [],
-        ]);
-
-        // Si on a des coordonnées pickup, on tente une assignation immédiate
-        if ($ride->pickup_lat !== null && $ride->pickup_lng !== null) {
-            $this->rideService->notifyNearbyDrivers($ride);
-        }
-
-        return response()->json([
-            'id' => $ride->id,
-            'status' => $ride->status,
-            'price' => $ride->fare_amount,
-            'currency' => $ride->currency,
-            'passenger_name' => $ride->passenger_name,
-            'passenger_phone' => $ride->passenger_phone,
-            'stop_started_at' => $ride->stop_started_at,
-            'total_stop_duration_s' => $ride->total_stop_duration_s,
-            ...$this->calculateRideFareBreakdown($ride),
-            'vehicle_type' => $ride->vehicle_type,
-            'has_baggage' => (bool) $ride->has_baggage,
-        ], 201);
     }
 
     public function create(Request $request)
